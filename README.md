@@ -1,2 +1,66 @@
-# mgm_i2i
-Conditional Midpoint Generative Models for image-to-image translation: theory, offline prototype, and Slurm experiments.
+# MGM для I2I: исследование и эксперименты
+
+**Для запуска на кластере начни с [CLUSTER.md](CLUSTER.md).** Подготовлены DIV2K ×4, MSE/GAN/MGM и три MGM-абляции, три seed, Slurm arrays, checkpoints/resume и сбор метрик. Основной план: 6 GPU-часов обучения, до 7.65 GPU-часа выделения. Код CUDA/Slurm пока не запускался; предусмотрен отдельный короткий пилот.
+
+GitHub содержит исходники, конфигурации и текстовые инструкции. Датасеты, веса, PDF, сторонние репозитории, Mac-окружение и архив офлайн-пакета в Git **не включены**. Для Linux скачивание готовит `scripts/cluster_prepare.py`. Раздел ниже описывает ранее подготовленный локальный комплект на Mac; наличие этих файлов после `git clone` не предполагается.
+
+## Локальный офлайн-пакет для Mac
+
+Подробная содержательная подготовка без новых запусков: **[теория и проект исследования](offline/THEORY_AND_RESEARCH_PLAN.md)**, **[текст десяти слайдов на 20 минут](offline/PRESENTATION_20_MIN.md)** и **[34 вопроса к защите](offline/DEFENSE_QA.md)**. Эти новые текстовые документы находятся в папке проекта. Прежний ZIP не пересобирался в рамках запроса без запуска скриптов.
+
+Начни с **[offline/guide.html](offline/guide.html)**: это самостоятельная инструкция на русском с формулами, локальными ссылками и планом на 20 часов. Интернет для чтения не нужен. Текстовая версия: [offline/GUIDE.md](offline/GUIDE.md).
+
+Пакет подготовлен для этого Mac: Apple Silicon, Python 3.13. Установочные wheel-файлы в `offline/wheels/` относятся именно к этой платформе. Статьи и наш исходный код переносимы; `.venv` не переносима.
+
+Всё уже находится в папке проекта и готово к работе. Резервная копия — `MGM_I2I_OFFLINE_MAC.zip` в корне проекта: статьи, данные, веса, установочные файлы, код и проверочные результаты. После распаковки при необходимости выполни `sh scripts/setup_offline.sh`. Начальная страница — `START_HERE.html`; её можно открыть в Safari/Chrome без локального сервера.
+
+## Первые команды
+
+В Terminal, из папки проекта:
+
+```bash
+cd /Users/kirill/edu/mgm_i2i
+.venv/bin/python scripts/check_offline.py
+.venv/bin/python -m pytest -q tests
+.venv/bin/python scripts/train.py --config configs/toy_mse.json
+.venv/bin/python scripts/train.py --config configs/toy_mgm.json
+.venv/bin/python scripts/compare.py runs/toy_mse runs/toy_mgm
+```
+
+Для нового запуска укажи другое `--output`; существующие результаты не перезаписываются. `Ctrl+C` сохраняет checkpoint.
+
+## Окружение и данные без сети
+
+Окружение уже установлено. Если понадобится восстановить его:
+
+```bash
+sh scripts/setup_offline.sh
+```
+
+Все установочные файлы, изображения CIFAR-10, LPIPS/AlexNet-веса и JS для формул находятся локально. Скрипты обучения не скачивают данные. `scripts/download_materials.py` нужен только для повторной подготовки при наличии сети.
+
+## Изображения
+
+```bash
+.venv/bin/python scripts/train.py --config configs/cifar_mse.json
+.venv/bin/python scripts/train.py --config configs/cifar_mgm.json
+.venv/bin/python scripts/train.py --config configs/cifar_gan.json
+.venv/bin/python scripts/compare.py runs/cifar_mse runs/cifar_mgm runs/cifar_gan
+```
+
+Это конфигурации стартового исследования, а не подобранные лучшие гиперпараметры. На CPU сначала проверь 20–50 шагов, измерь скорость и реши, сколько обучать. Команды smoke-test и продолжения есть в руководстве.
+
+## Где что находится
+
+- `materials/` — основная статья и десять дополнительных PDF; карта чтения в руководстве.
+- `third_party/` — распакованные публичные исходники EDM, SiD, pix2pix, Zero-Flow и categorical MGM. Это справочный код; наш прототип его не импортирует.
+- `src/mgm_i2i/` — наша адаптация: модели, данные, MGM-loss и метрики.
+- `scripts/` — обучение, оценка, сравнение, проверка офлайн-работы.
+- `configs/` — настройки синтетических и CIFAR-экспериментов.
+- `data/cifar10/` — 50 000 исходных train-изображений и 10 000 test-изображений. Train разбивается на 45 000 train / 5 000 val.
+- `runs/verified_*` — проверочные запуски, полученные при подготовке; не итоговый результат задания.
+- `offline/verification.json` — результат проверки с заблокированными сетевыми соединениями.
+- `offline/inventory.json` — происхождение и SHA-256 скачанных файлов.
+- `offline/AI_AND_COMPUTE.md` — шаблон раскрытия использования AI и вычислений по ТЗ.
+
+Главная гипотеза: условный MGM сравнивает распределения HR-выходов для одного LR-входа. На синтетике проверяем две моды и неопределённость; на CIFAR — точность, perceptual-качество, согласованность и стоимость. Совпадение marginal-распределений само по себе не доказывает правильную I2I-связь.

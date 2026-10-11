@@ -1,0 +1,6 @@
+{
+  "dataset": "toy", "method": "mgm", "width": 64, "batch_size": 128,
+  "steps": 4000, "warmup_steps": 200, "critic_steps": 2,
+  "lr_g": 0.001, "lr_f": 0.001, "noise_strength": 0.01,
+  "project": true, "ema": 0.99, "output": "runs/toy_mgm"
+}

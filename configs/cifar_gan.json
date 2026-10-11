@@ -1,0 +1,8 @@
+{
+  "dataset": "cifar10", "method": "gan", "width": 32, "blocks": 3,
+  "batch_size": 16, "steps": 2000, "warmup_steps": 200,
+  "lr_g": 0.0001, "lr_f": 0.0002, "critic_steps": 1,
+  "supervised_weight": 0.0, "project": true,
+  "train_limit": 2048, "eval_limit": 256, "ema": 0.99,
+  "output": "runs/cifar_gan"
+}

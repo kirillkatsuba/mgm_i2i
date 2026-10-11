@@ -1,0 +1,8 @@
+# Install the CUDA torch/torchvision wheels separately; see CLUSTER.md.
+numpy==2.2.1
+Pillow==11.1.0
+matplotlib==3.10.0
+lpips==0.1.4
+scipy==1.15.1
+tqdm==4.67.1
+pytest==8.3.4

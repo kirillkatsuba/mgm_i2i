@@ -1,0 +1,42 @@
+"""Execute one immutable plan entry; never called automatically on the Mac."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'src'))
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--plan', required=True, type=Path)
+    p.add_argument('--phase', choices=['warmup', 'train'], required=True)
+    p.add_argument('--index', type=int, required=True)
+    p.add_argument('--resume', action='store_true')
+    p.add_argument('--evaluate-only', action='store_true')
+    p.add_argument('--split', choices=['val', 'test'], default='val')
+    args = p.parse_args()
+    raw = args.plan.read_bytes()
+    expected = args.plan.with_suffix('.sha256').read_text().strip()
+    if hashlib.sha256(raw).hexdigest() != expected:
+        raise ValueError('Plan was edited after creation. Create a new plan instead.')
+    plan = json.loads(raw)
+    jobs = plan[args.phase]
+    if not 0 <= args.index < len(jobs):
+        p.error('array index outside plan')
+    item = jobs[args.index]
+    from mgm_i2i.cluster.engine import train
+    from mgm_i2i.cluster.metrics import evaluate
+    if not args.evaluate_only:
+        if args.split == 'test':
+            p.error('Held-out test requires --evaluate-only after fixing the protocol')
+        train(item['config'], item['output'], item.get('init'), args.resume)
+    if args.phase == 'train' or args.evaluate_only:
+        evaluate(Path(item['output'])/'latest.pt', item['output'], args.split,
+                 item['config']['eval_batch_size'])
+
+
+if __name__ == '__main__':
+    main()

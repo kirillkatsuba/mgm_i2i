@@ -1,0 +1,5 @@
+{
+  "dataset": "toy", "method": "mse", "width": 64, "batch_size": 128,
+  "steps": 4000, "warmup_steps": 0, "lr_g": 0.001,
+  "project": true, "ema": 0.99, "output": "runs/toy_mse"
+}

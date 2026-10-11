@@ -1,0 +1,7 @@
+{
+  "dataset": "cifar10", "method": "mse", "width": 32, "blocks": 3,
+  "batch_size": 16, "steps": 2000, "warmup_steps": 0,
+  "lr_g": 0.0002, "lr_f": 0.0002, "project": true,
+  "train_limit": 2048, "eval_limit": 256, "ema": 0.99,
+  "output": "runs/cifar_mse"
+}
