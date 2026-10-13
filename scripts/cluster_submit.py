@@ -8,6 +8,7 @@ import shlex
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_TRAIN_MINUTES = 120.
 VARIANTS = {
     'mse': {'method': 'mse'},
     'gan': {'method': 'gan'},
@@ -67,7 +68,7 @@ def make_plan(args):
                           # USR1@120 can arrive 60 s early. Leave an additional
                           # two minutes for startup before the training timer.
                           warmup_limit_minutes=math.ceil(args.warmup_minutes+5),
-                          train_limit_minutes=math.ceil(args.train_minutes+5))
+                          train_limit_minutes=math.ceil(args.train_minutes+10))
     plan['budget']['allocation_gpu_hours_upper_bound'] = (
         len(plan['warmup'])*plan['budget']['warmup_limit_minutes']+
         len(plan['train'])*plan['budget']['train_limit_minutes'])/60
@@ -109,7 +110,8 @@ def main():
     p.add_argument('--seeds', type=int, nargs='+', default=[0,1,2])
     p.add_argument('--variants', nargs='+', choices=list(VARIANTS), default=list(VARIANTS))
     p.add_argument('--warmup-minutes', type=float, default=12.)
-    p.add_argument('--train-minutes', type=float, default=18.)
+    p.add_argument('--train-minutes', type=float, default=DEFAULT_TRAIN_MINUTES,
+                   help='Training budget per main task, excluding shared warmup (default: 120)')
     p.add_argument('--batch-size', type=int, default=16)
     p.add_argument('--width', type=int, default=48)
     p.add_argument('--cpus', type=int, default=4)

@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=4
-#SBATCH --time=23
+#SBATCH --time=02:10:00
 #SBATCH --signal=USR1@120
 #SBATCH --output=slurm/logs/%x-%A_%a.out
 

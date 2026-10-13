@@ -94,11 +94,14 @@ def test_plan_budget_and_common_initialization(tmp_path):
     args = SimpleNamespace(data_root=tmp_path/'data', weights_root=tmp_path/'weights',
                            run_root=tmp_path/'runs', width=48,batch_size=16,cpus=4,fp32=False,
                            partition='rocky',max_parallel=1,constraint='',account='',
-                           seeds=[0,1,2],variants=list(module.VARIANTS),warmup_minutes=12,train_minutes=18)
+                           seeds=[0,1,2],variants=list(module.VARIANTS),warmup_minutes=12,
+                           train_minutes=module.DEFAULT_TRAIN_MINUTES)
     plan = module.make_plan(args)
     assert len(plan['warmup']) == 3 and len(plan['train']) == 18
-    assert plan['budget']['training_gpu_hours'] == 6
-    assert plan['budget']['allocation_gpu_hours_upper_bound'] == 7.75
+    assert all(item['config']['seconds'] == 7200 for item in plan['train'])
+    assert plan['budget']['training_gpu_hours'] == pytest.approx(36.6)
+    assert plan['budget']['allocation_gpu_hours_upper_bound'] == pytest.approx(39.85)
+    assert plan['budget']['train_limit_minutes'] == 130
     # The earliest warning is time_limit - 120s - 60s. It must leave startup
     # headroom as well as the full requested training interval.
     for phase, key in [('warmup', 'warmup_limit_minutes'), ('train', 'train_limit_minutes')]:
@@ -109,3 +112,34 @@ def test_plan_budget_and_common_initialization(tmp_path):
     cmds = module.commands(plan, tmp_path/'plan.json')
     assert any('afterok:' in word for word in cmds[1])
     assert any('afterany:' in word for word in cmds[2])
+
+
+def test_progress_resumes_clock_and_writes_log_lines():
+    from io import StringIO
+    from mgm_i2i.cluster.progress import BudgetProgress
+
+    output = StringIO()
+    progress = BudgetProgress(7200, 'mgm/seed0', elapsed=3600, step=100, stream=output)
+    assert progress.bar.n == 3600
+    progress.update(5400, 200, {'g': .01})
+    progress.close()
+    log = output.getvalue()
+    assert '\r' not in log
+    assert '50.00%' in log and '75.00%' in log
+    assert 'elapsed=01:30:00/02:00:00' in log
+    assert 'remaining=00:30:00' in log
+    assert 'step=200' in log and 'g=0.01' in log
+    assert '100.00%' not in log  # interrupted close must not claim completion
+
+
+def test_progress_clamps_deadline_overshoot():
+    from io import StringIO
+    from mgm_i2i.cluster.progress import BudgetProgress
+
+    output = StringIO()
+    progress = BudgetProgress(7200, 'mgm/seed0', stream=output)
+    progress.update(7200.25, 300)
+    progress.close()
+    assert progress.bar.n == 7200
+    assert '100.00%' in output.getvalue()
+    assert 'remaining=00:00:00' in output.getvalue()

@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 from ..losses import observation, variational_loss, field_loss, random_bridge
 from .data import CropBank, SampleRange
 from .models import Generator, Field, Discriminator
+from .progress import BudgetProgress
 
 
 def atomic_json(path, value):
@@ -212,7 +213,10 @@ def train(cfg, output, init=None, resume=False):
         scaler.update()
         return scaler.get_scale() >= scale
 
+    progress = None
     try:
+        progress = BudgetProgress(cfg['seconds'], f'{cfg["variant"]}/seed{cfg["seed"]}',
+                                  elapsed=elapsed, step=step)
         # A valid initial checkpoint also permits recovery from an early OOM.
         if not latest.exists():
             save(False)
@@ -268,12 +272,17 @@ def train(cfg, output, init=None, resume=False):
                                skipped_g=skipped_g, skipped_aux=skipped_aux)
                     log.write(json.dumps(row, allow_nan=False)+'\n')
                     log.flush()
-                    print(row, flush=True)
+                    progress.update(row['seconds'], step, {key: row[key] for key in
+                                    ('g', 'mse', 'aux', 'skipped_g', 'skipped_aux')})
+                else:
+                    progress.update(elapsed+time.monotonic()-start, step)
                 if time.monotonic() - previous_checkpoint >= cfg['checkpoint_seconds']:
                     save(False)
                     previous_checkpoint = time.monotonic()
         complete = not interrupted and successful_g > 0 and elapsed+time.monotonic()-start >= cfg['seconds']
         result = save(complete)
+        progress.update(result['elapsed_training_seconds'], step)
+        progress.close()
         if interrupted:
             print(f'Training interrupted by {result["received_signals"]}; '
                   f'saved {latest} at {result["elapsed_training_seconds"]:.1f}/{cfg["seconds"]:.1f} '
@@ -285,5 +294,8 @@ def train(cfg, output, init=None, resume=False):
               f'{result["elapsed_training_seconds"]:.1f} training seconds; checkpoint {latest}', flush=True)
         return result
     finally:
+        if progress is not None:
+            progress.update(elapsed+time.monotonic()-start, step)
+            progress.close()
         for signum, handler in old_handlers.items():
             signal.signal(signum, handler)
