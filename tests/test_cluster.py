@@ -94,13 +94,15 @@ def test_plan_budget_and_common_initialization(tmp_path):
     args = SimpleNamespace(data_root=tmp_path/'data', weights_root=tmp_path/'weights',
                            run_root=tmp_path/'runs', width=48,batch_size=16,cpus=4,fp32=False,
                            partition='rocky',max_parallel=1,constraint='',account='',
-                           seeds=[0,1,2],variants=list(module.VARIANTS),warmup_minutes=12,
+                           seeds=[0,1,2],variants=list(module.VARIANTS),
+                           warmup_minutes=module.DEFAULT_WARMUP_MINUTES,
                            train_minutes=module.DEFAULT_TRAIN_MINUTES)
     plan = module.make_plan(args)
     assert len(plan['warmup']) == 3 and len(plan['train']) == 18
-    assert all(item['config']['seconds'] == 7200 for item in plan['train'])
-    assert plan['budget']['training_gpu_hours'] == pytest.approx(36.6)
-    assert plan['budget']['allocation_gpu_hours_upper_bound'] == pytest.approx(39.85)
+    assert all(item['config']['seconds'] == 7200 for item in plan['warmup'] + plan['train'])
+    assert plan['budget']['training_gpu_hours'] == pytest.approx(42.)
+    assert plan['budget']['allocation_gpu_hours_upper_bound'] == pytest.approx(45.5)
+    assert plan['budget']['warmup_limit_minutes'] == 130
     assert plan['budget']['train_limit_minutes'] == 130
     # The earliest warning is time_limit - 120s - 60s. It must leave startup
     # headroom as well as the full requested training interval.
