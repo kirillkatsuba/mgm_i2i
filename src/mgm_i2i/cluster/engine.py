@@ -146,6 +146,7 @@ def train(cfg, output, init=None, resume=False):
         history = state['sessions']
         restore_rng(state['rng'])
         if state['complete']:
+            print(f'Training already complete: {latest}; skipping updates.', flush=True)
             return state  # caller can retry evaluation without retraining
         # Discard log rows from updates lost after the last atomic checkpoint.
         log_path = output/'train.jsonl'
@@ -187,13 +188,15 @@ def train(cfg, output, init=None, resume=False):
                      successful_g=successful_g, skipped_g=skipped_g, skipped_aux=skipped_aux,
                      elapsed_training_seconds=elapsed + time.monotonic()-start,
                      peak_allocated_bytes_this_session=torch.cuda.max_memory_allocated(),
-                     data_hash=data_hash, init_hash=init_hash, sessions=history, complete=complete)
+                     data_hash=data_hash, init_hash=init_hash, sessions=history, complete=complete,
+                     received_signals=[signal.Signals(s).name for s in interrupted])
         temp = output/'latest.tmp.pt'
         torch.save(state, temp)
         temp.replace(latest)
         atomic_json(output/'status.json', {k: state[k] for k in (
             'step', 'consumed', 'successful_g', 'skipped_g', 'skipped_aux',
-            'elapsed_training_seconds', 'peak_allocated_bytes_this_session', 'complete', 'data_hash', 'init_hash')})
+            'elapsed_training_seconds', 'peak_allocated_bytes_this_session', 'complete', 'data_hash', 'init_hash',
+            'received_signals')})
         return state
 
     def update(loss, optimizer, parameters):
@@ -272,9 +275,14 @@ def train(cfg, output, init=None, resume=False):
         complete = not interrupted and successful_g > 0 and elapsed+time.monotonic()-start >= cfg['seconds']
         result = save(complete)
         if interrupted:
+            print(f'Training interrupted by {result["received_signals"]}; '
+                  f'saved {latest} at {result["elapsed_training_seconds"]:.1f}/{cfg["seconds"]:.1f} '
+                  'training seconds. Resume this checkpoint; exit code 75.', flush=True)
             raise SystemExit(75)
         if not complete or successful_g == 0:
             raise RuntimeError('Training did not complete any successful G updates')
+        print(f'Training complete: {step} steps, {successful_g} successful G updates; '
+              f'{result["elapsed_training_seconds"]:.1f} training seconds; checkpoint {latest}', flush=True)
         return result
     finally:
         for signum, handler in old_handlers.items():

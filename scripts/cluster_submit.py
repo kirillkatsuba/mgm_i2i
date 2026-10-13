@@ -64,7 +64,9 @@ def make_plan(args):
                                       init=str(warm_dir/'latest.pt')))
     plan['budget'] = dict(training_gpu_hours=(len(plan['warmup'])*args.warmup_minutes+
                                               len(plan['train'])*args.train_minutes)/60,
-                          warmup_limit_minutes=math.ceil(args.warmup_minutes+3),
+                          # USR1@120 can arrive 60 s early. Leave an additional
+                          # two minutes for startup before the training timer.
+                          warmup_limit_minutes=math.ceil(args.warmup_minutes+5),
                           train_limit_minutes=math.ceil(args.train_minutes+5))
     plan['budget']['allocation_gpu_hours_upper_bound'] = (
         len(plan['warmup'])*plan['budget']['warmup_limit_minutes']+

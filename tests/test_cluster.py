@@ -98,7 +98,12 @@ def test_plan_budget_and_common_initialization(tmp_path):
     plan = module.make_plan(args)
     assert len(plan['warmup']) == 3 and len(plan['train']) == 18
     assert plan['budget']['training_gpu_hours'] == 6
-    assert plan['budget']['allocation_gpu_hours_upper_bound'] <= 8
+    assert plan['budget']['allocation_gpu_hours_upper_bound'] == 7.75
+    # The earliest warning is time_limit - 120s - 60s. It must leave startup
+    # headroom as well as the full requested training interval.
+    for phase, key in [('warmup', 'warmup_limit_minutes'), ('train', 'train_limit_minutes')]:
+        earliest_warning = plan['budget'][key]*60 - 120 - 60
+        assert earliest_warning - plan[phase][0]['config']['seconds'] >= 120
     for seed in args.seeds:
         assert len({x['init'] for x in plan['train'] if x['config']['seed'] == seed}) == 1
     cmds = module.commands(plan, tmp_path/'plan.json')
