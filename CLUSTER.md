@@ -106,6 +106,8 @@ python scripts/cluster_collect.py --plan cluster_runs/main/plan.json
 
 В корне плана появятся `val_runs.csv`, `val_summary.md` и JSON. Для каждого run: `config.json`, `environment.json`, `status.json`, `train.jsonl`, `latest.pt`, `val_metrics.json`, оценки по crop и исходным изображениям, `val_samples.png`. В grid фиксированные первые восемь crop, столбцы: nearest LR / bicubic / projected bicubic / HR / draw 1 / draw 2. Seed генерации фиксирован по crop, не зависит от batch size; best-of-N не используется.
 
+Git на вычислительном узле необязателен. Если команда недоступна, завершается ошибкой или не отвечает за 5 секунд, поля `git_commit`/`git_status` получают `unavailable`; обучение и evaluation продолжаются. Пустой `git_status` означает успешно проверенное чистое рабочее дерево.
+
 Checkpoint сохраняется атомарно каждые 120 секунд и при штатном окончании. Slurm посылает USR1 за 120 секунд до time limit: обучение заканчивает текущую итерацию, сохраняется и возвращает код 75. SIGTERM обрабатывается аналогично; при немедленном SIGKILL сохраняется только предыдущий checkpoint. Автоматического requeue нет.
 
 Пример восстановления **конкретного** train index=4 (прочитай его параметры в `plan.json`). Выполняй из корня клона, когда исходная задача уже завершилась:

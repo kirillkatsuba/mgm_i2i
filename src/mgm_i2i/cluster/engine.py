@@ -36,7 +36,13 @@ def fingerprint(path):
 
 def provenance():
     def git(*args):
-        p = subprocess.run(['git', *args], capture_output=True, text=True)
+        # Git may only be installed on the login node. Optional metadata must
+        # neither fail training/evaluation nor hang on a shared filesystem.
+        try:
+            p = subprocess.run(['git', *args], capture_output=True, text=True,
+                               errors='replace', timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            return 'unavailable'
         return p.stdout.strip() if p.returncode == 0 else 'unavailable'
     return dict(git_commit=git('rev-parse', 'HEAD'), git_status=git('status', '--porcelain'),
                 torch=torch.__version__, cuda=torch.version.cuda,

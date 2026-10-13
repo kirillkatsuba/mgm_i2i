@@ -1,10 +1,12 @@
 """Authored for execution on the cluster; not executed during code preparation."""
 import importlib.util
 from pathlib import Path
+import subprocess
 import sys
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 import torch
 from torch.nn import functional as F
 
@@ -13,6 +15,39 @@ sys.path.insert(0, str(ROOT/'src'))
 from mgm_i2i.cluster.models import Generator, Field, project
 from mgm_i2i.cluster.data import CropBank, SampleRange
 from mgm_i2i.losses import observation, variational_loss
+
+
+@pytest.mark.parametrize('failure', [FileNotFoundError('git'), PermissionError('git'),
+                                     subprocess.TimeoutExpired(['git'], 5), None])
+def test_provenance_without_working_git(monkeypatch, failure):
+    from mgm_i2i.cluster import engine
+
+    def unavailable(*args, **kwargs):
+        assert kwargs['timeout'] == 5
+        if failure is not None:
+            raise failure
+        return SimpleNamespace(returncode=128, stdout='', stderr='not a repository')
+
+    monkeypatch.setattr(engine.subprocess, 'run', unavailable)
+    monkeypatch.setattr(engine.torch.cuda, 'get_device_name', lambda index: 'test GPU')
+    result = engine.provenance()
+    assert result['git_commit'] == result['git_status'] == 'unavailable'
+    assert result['gpu'] == 'test GPU'
+    assert result['torch'] == torch.__version__
+
+
+def test_provenance_preserves_available_git_metadata(monkeypatch):
+    from mgm_i2i.cluster import engine
+
+    def available(command, **kwargs):
+        output = 'abc123\n' if command[1] == 'rev-parse' else ''
+        return SimpleNamespace(returncode=0, stdout=output)
+
+    monkeypatch.setattr(engine.subprocess, 'run', available)
+    monkeypatch.setattr(engine.torch.cuda, 'get_device_name', lambda index: 'test GPU')
+    result = engine.provenance()
+    assert result['git_commit'] == 'abc123'
+    assert result['git_status'] == ''  # clean tree is different from unavailable
 
 
 def test_projection_and_generator_enforce_same_lr():
