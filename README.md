@@ -1,6 +1,12 @@
 # MGM для I2I: исследование и эксперименты
 
-**Для запуска на кластере начни с [CLUSTER.md](CLUSTER.md).** Подготовлены DIV2K ×4, MSE/GAN/MGM и три MGM-абляции, три seed, Slurm arrays, checkpoints/resume и сбор метрик. Новый основной план: **2 часа обучения на каждый из 18 запусков** плюс три общих warmup по **2 часа**, всего 42 GPU-часа обучения. Лимиты Slurm суммарно до 45.5 GPU-часа. Добавлен tqdm с прошедшим и оставшимся временем, в том числе для логов Slurm и resume. Пользователь получил полный validation-отчёт 18/18; финальный test ещё не подтверждён. Предусмотрен отдельный короткий пилот.
+**Общий preprocessing:** для всех методов подтверждены случайные train-патчи128, фиксированный center128 на validation/test и average pooling ×4; оригинальные native transforms ESRGAN/I²SB остаются справочными. Подробности и варианты расширения данных — [research/PREPROCESSING_PROTOCOL.md](research/PREPROCESSING_PROTOCOL.md). ESRGAN, VGG perceptual loss и I²SB подключены к training/evaluation engine; CUDA/VRAM ещё нужно проверить пилотом.
+
+**Data protocol всех выбранных моделей:** `random128-v3`: полные train-фото сохраняются в mmap NPY, loader выбирает случайные исходные HR crops128 без resize/поворотов/отражений. Validation/test — фиксированные center128; LR32 через pooling ×4. Новая подготовка — `data/div2k_random128`, нужны новый run root и warmup. Старые планы center128-v2 и legacy сохраняют исходные данные и loader. Подробности — [CLUSTER.md](CLUSTER.md).
+
+**Решения и идеи:** [research/IDEAS.md](research/IDEAS.md). Новые кластерные планы используют ширины **120/240/480** (G — 16.02 млн параметров, MGM с полем — 33.32 млн) и архитектуру v2: RGB-residual без `tanh`, sinusoidal TimeEmbedding поля. Старые checkpoints оцениваются с прежней архитектурой; подробности совместимости — в [CLUSTER.md](CLUSTER.md).
+
+**Запуск на Slurm:** [CLUSTER.md](CLUSTER.md). План v4 включает MSE/MSE+perceptual/ESRGAN/MGM/I²SB, 3 seed, отдельные warmup/train/eval arrays и collector. Каждая GPU-задача использует одну GPU; default `--max-parallel 4`. Основная серия: 48 GPU-часов training плюс evaluation; пилот всех пяти методов — 13 GPU-минут training плюс evaluation. Перед `--submit` создаётся reviewable plan; в этой сессии Slurm/GPU не запускались.
 
 **Полные фотографии:** [FULL_IMAGES.md](FULL_IMAGES.md) — дополнительный инференс целых DIV2K-кадров готовыми EMA-checkpoints, PNG без уменьшения, сравнение методов в HTML и отдельные PSNR/SSIM. Новый режим и его тесты пока не запускались.
 

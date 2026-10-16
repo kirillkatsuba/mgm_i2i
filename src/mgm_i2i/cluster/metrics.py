@@ -11,9 +11,10 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from ..evaluate import ssim
-from .data import CropBank
-from .engine import atomic_json, fingerprint, provenance, seed_all
-from .models import Generator, project
+from .data import CropBank, validate_data_protocol
+from .engine import atomic_json, fingerprint, provenance, seed_all, sr_forward
+from .models import project
+from .baselines import build_generator, I2SBBridge
 
 
 def fixed_latents(start, count, shape, device, draw):
@@ -22,18 +23,28 @@ def fixed_latents(start, count, shape, device, draw):
         20260101 + (start+i)*2 + draw)) for i in range(count)]).to(device)
 
 
-def evaluate(checkpoint, output, split='val', batch_size=4):
+def predict_sr(model, c, z, cfg, *, bridge=None, nfe=1, offset=0, draw=0):
+    if cfg['method'] != 'i2sb':
+        return sr_forward(model, c, z, cfg)
+    # A separate RNG for each source image makes draws independent of batch size.
+    generators = [torch.Generator(device=c.device).manual_seed(20260101 + (offset+i)*2 + draw)
+                  for i in range(len(c))]
+    degraded = F.interpolate(c, scale_factor=cfg['scale'], mode='nearest')
+    return bridge.sample(model, degraded, nfe, generators=generators)
+
+
+def evaluate(checkpoint, output, split='val', batch_size=4, nfe=1):
     # A complete training checkpoint already exists. Use the full remaining
     # allocation for evaluation instead of dying on the advance warning signal.
     previous = signal.signal(signal.SIGUSR1, signal.SIG_IGN)
     try:
-        return _evaluate(checkpoint, output, split, batch_size)
+        return _evaluate(checkpoint, output, split, batch_size, nfe)
     finally:
         signal.signal(signal.SIGUSR1, previous)
 
 
 @torch.no_grad()
-def _evaluate(checkpoint, output, split, batch_size):
+def _evaluate(checkpoint, output, split, batch_size, nfe=1):
     started = time.monotonic()
     checkpoint, output = Path(checkpoint), Path(output)
     state = torch.load(checkpoint, map_location='cpu', weights_only=False)
@@ -43,6 +54,7 @@ def _evaluate(checkpoint, output, split, batch_size):
     seed_all(cfg['seed'])
     torch.set_num_threads(cfg['cpus'])
     root = Path(cfg['data_root'])
+    validate_data_protocol(root, cfg)
     if fingerprint(root/'manifest.json') != state['data_hash']:
         raise ValueError('Dataset manifest changed since training')
     weights = Path(cfg['weights_root'])
@@ -51,10 +63,15 @@ def _evaluate(checkpoint, output, split, batch_size):
     torch.hub.set_dir(str(weights/'hub'))
     import lpips
     metric = lpips.LPIPS(net='alex', version='0.1', verbose=False).cuda().eval()
-    gen = Generator(cfg['width'], cfg['scale'], cfg['projection']).cuda().eval()
+    gen = build_generator(cfg).cuda().eval()
     gen.load_state_dict(state['ema'])
+    bridge = (I2SBBridge(cfg['i2sb_intervals'], cfg['i2sb_beta_max']).cuda()
+              if cfg['method'] == 'i2sb' else None)
+    if cfg['method'] != 'i2sb' and nfe != 1:
+        raise ValueError('Only I2SB supports NFE > 1')
     manifest = json.loads((root/'manifest.json').read_text())
-    dataset = CropBank(root/f'{split}.npy', crop=cfg['eval_crop'], training=False)
+    dataset = CropBank(root/f'{split}.npy', crop=cfg['eval_crop'], training=False,
+                       mode='center' if cfg.get('data_protocol') else 'legacy')
     metadata = manifest['banks'][f'{split}.npy']['crops']
     if len(metadata) != len(dataset):
         raise ValueError('Crop metadata length mismatch')
@@ -66,20 +83,21 @@ def _evaluate(checkpoint, output, split, batch_size):
         c = F.avg_pool2d(real, cfg['scale'])
         z1 = fixed_latents(offset, len(real), real.shape[1:], real.device, 0)
         z2 = fixed_latents(offset, len(real), real.shape[1:], real.device, 1)
-        if cfg['method'] == 'mse':
+        if cfg['method'] in ('mse', 'mse_perceptual', 'esrgan', 'rrdb_l1'):
             z1.zero_()
             z2.zero_()
         # FP32 inference for every method. First batch excluded from throughput.
         torch.cuda.synchronize()
         tick = time.perf_counter()
-        fake = gen(c, z1)
+        fake = predict_sr(gen, c, z1, cfg, bridge=bridge, nfe=nfe, offset=offset, draw=0)
         torch.cuda.synchronize()
         if offset:
             latency.append((time.perf_counter()-tick, len(real)))
-        other = gen(c, z2)
+        other = predict_sr(gen, c, z2, cfg, bridge=bridge, nfe=nfe, offset=offset, draw=1)
         bicubic = F.interpolate(c, size=real.shape[-2:], mode='bicubic', align_corners=False)
         projected = project(bicubic, c, cfg['scale'])
-        outputs = {'model': fake, 'bicubic': bicubic, 'projected_bicubic': projected}
+        outputs = {'model': fake, 'model_projected': project(fake, c, cfg['scale']),
+                   'bicubic': bicubic, 'projected_bicubic': projected}
         values = {}
         for name, raw in outputs.items():
             clipped = raw.clamp(-1, 1)
@@ -113,9 +131,10 @@ def _evaluate(checkpoint, output, split, batch_size):
     atomic_json(output/f'{split}_images.json', per_image)
     Image.fromarray(np.concatenate(pictures, axis=0)).save(output/f'{split}_samples.png')
     result = dict(metrics=metrics, split=split, images=len(per_image), crops=len(rows),
-                  seed=cfg['seed'], variant=cfg['variant'], checkpoint_sha256=fingerprint(checkpoint),
+                  seed=cfg['seed'], variant=cfg['variant'], nfe=nfe, checkpoint_sha256=fingerprint(checkpoint),
                   data_hash=state['data_hash'], step=state['step'], successful_g=state['successful_g'],
                   consumed=state['consumed'], training_seconds=state['elapsed_training_seconds'],
+                  warmup_training_seconds=state.get('warmup_training_seconds', 0.),
                   evaluation_seconds=time.monotonic()-started,
                   inference_ms_per_image=1000*sum(t for t,n in latency)/sum(n for t,n in latency) if latency else None,
                   eval_batch_size=batch_size, precision='fp32',
@@ -123,6 +142,6 @@ def _evaluate(checkpoint, output, split, batch_size):
                   protocol='RGB clipped [0,1] PSNR/SSIM; LPIPS AlexNet v0.1 at native crop size; no border shave; mean of crop scores per source image, then mean images',
                   consistency_units='MSE on [-1,1] tensors; raw and clipped reported separately',
                   grid_columns='nearest LR / bicubic / projected bicubic / HR / draw 1 / draw 2',
-                  throughput_protocol='G forward only; GPU synchronization; excludes first batch, transfer and latent sampling; not batch-1 latency')
+                  throughput_protocol='Full SR inference in FP32, including all I2SB NFE/noise; GPU synchronization; excludes first batch, transfer, metrics and final projection; compare only equal batch sizes')
     atomic_json(output/f'{split}_metrics.json', result)
     return result

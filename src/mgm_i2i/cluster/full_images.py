@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 from ..evaluate import ssim
 from .engine import atomic_json, fingerprint, provenance
-from .models import Generator, project
+from .models import Generator, project, get_architecture_version
 
 
 def prepare_frame(pixels, scale):
@@ -129,7 +129,9 @@ def infer_full(item, output_root, split='val', limit=8, image_ids=None, archive_
                    lr_consistency_extent='Padded canvas before removing bottom/right padding',
                    environment=provenance())
     atomic_json(destination/'request.json', request)
-    gen = Generator(cfg['width'], cfg['scale'], cfg['projection']).cuda().eval()
+    if cfg['method'] in ('i2sb', 'esrgan', 'rrdb_l1'):
+        raise ValueError('Full-frame utility supports U-Net G only; use cluster_run.py --phase eval for this baseline')
+    gen = Generator(cfg['width'], cfg['scale'], cfg['projection'], get_architecture_version(cfg)).cuda().eval()
     gen.load_state_dict(state['ema'])
     del state
     torch.cuda.reset_peak_memory_stats()
@@ -159,7 +161,7 @@ def infer_full(item, output_root, split='val', limit=8, image_ids=None, archive_
             draws, seconds = [], []
             consistency = []
             for draw in range(2):
-                z = frame_latent(padded.shape, image_id, draw, cfg['method']=='mse').cuda()
+                z = frame_latent(padded.shape, image_id, draw, cfg['method'] in ('mse', 'mse_perceptual')).cuda()
                 torch.cuda.synchronize()
                 tick = time.perf_counter()
                 try:

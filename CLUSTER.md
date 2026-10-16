@@ -1,63 +1,31 @@
-# MGM I2I на кластере: DIV2K ×4, по 2 часа на warmup и основное обучение
+# Сравнение SR ×4 на Slurm
 
-Это исследовательский код. При первоначальной подготовке обучение, тесты и Slurm не запускались по просьбе пользователя. Позднее пользователь запустил CUDA warmup: ранний короткий запуск прервался по сигналу с кодом 75. Исправлен запас времени Slurm, затем увеличен бюджет; пользователь предоставил успешные двухчасовые warmup и полный validation-отчёт 18/18. Финальный test и новый режим полных фотографий пока не подтверждены. Для нового окружения сначала проведи короткий пилот ниже. Заявленный бюджет ограничивает время, но не гарантирует сходимость или преимущество MGM.
+Подготовлен запуск **MSE, MSE+perceptual, ESRGAN, MGM v2 и I²SB U-Net-120**. Одна Slurm-задача — одна модель и один seed на одной GPU. По умолчанию одновременно работают до **4 GPU-задач**; лимит меняется через `--max-parallel`. Это независимые запуски, без DDP и без распределения одной модели по нескольким GPU.
 
-## Что проверяем
+Код проверен офлайн на CPU. Реальные данные нового протокола, обучение на GPU и постановка в Slurm в этой сессии не выполнялись. Перед длинной серией нужен пилот ниже: он проверит CUDA/AMP, VRAM, локальные веса, checkpoints и evaluator. Для выбранных сетей ориентируемся на V100 32GB; фактическое потребление памяти ещё не измерено. Для сравнения времени выбирай одинаковый тип GPU для всех задач.
 
-Можно ли обучить однопроходный условный генератор `G(c,z)` восстанавливать правдоподобные HR-изображения, согласованные с LR, используя MGM вместо GAN-loss? Сравнение проводится при одинаковой архитектуре G, исходном checkpoint, batch size и времени обучения. Поле MGM и дискриминатор GAN разные: их задачи и вычислительная стоимость различаются.
+## Данные и модели
 
-Здесь нет teacher diffusion model: это обучение по настоящим HR-изображениям. Дистилляция могла бы стать отдельным продолжением, но смешивать её с текущим сравнением за этот бюджет не стоит.
+Общий `random128-v3`: 800 исходных DIV2K train-фото, онлайн равновероятный выбор фото и случайного HR crop128. Без resize, поворотов и отражений. LR32 = `avg_pool2d(HR,4)`. Validation/test — фиксированные center128 из 50/50 официальных validation-фото, split seed=123. Разделение выполняется по фотографиям. Flickr2K не добавлен.
 
-По запросу пользователя основной бюджет увеличен с 18 до **120 минут на задачу**, а общий MSE warmup — с 12 до **120 минут на seed**. Это значения по умолчанию для новых планов. Старые планы и результаты не меняются: новый двухчасовой эксперимент создавай в новой папке, например `cluster_runs/full_2h`. `--resume` продолжает оставшийся бюджет исходного плана, а не превращает старый завершённый короткий запуск в двухчасовой.
+Полные train RGB сохраняются в отдельных `train_images/NNNN.npy`, loader использует mmap. В RAM копируется выбранный патч; PNG не декодируется на каждом шаге. Фото и координаты зависят от seed и глобального sample index; последовательность сохраняется при prefetch/resume. Методы с одинаковым seed имеют одинаковую последовательность примеров по sample index, но при равном времени успевают обработать разное их число.
 
-| Вариант | Что меняется | Проверяемая гипотеза |
+| Метод | Обучение | Параметры inference / trainable |
 |---|---|---|
-| `mse` | Детерминированный G, попиксельный MSE | Хорошая реконструкция, но усреднение неоднозначных деталей |
-| `gan` | Условный PatchGAN, hinge-loss | Обычный adversarial ориентир для качества и устойчивости |
-| `mgm` | Скрытый flip, случайное t, шум у обоих игроков | Основная условная адаптация MGM |
-| `mgm_midpoint` | Всегда t=0.5 | Что даёт распределение времён относительно одного midpoint |
-| `mgm_critic_noise` | Шум только при обучении поля | Практическая эвристика со смещением generator objective |
-| `mgm_antithetic` | Среднее по b и 1−b с общим t и шумом | Снижение случайности flip против дополнительной стоимости |
+| `mse` | MSE; G при Z=0 | 16.02 / 16.02 млн |
+| `mse_perceptual` | MSE + VGG19 conv5_4 до ReLU, L1 features | 16.02 / 16.02 млн |
+| `esrgan` | RRDB23 L1 pretraining → pixel L1 + VGG + relativistic logistic GAN | 16.70 / 31.20 млн |
+| `mgm` | G и условное поле v2; согласованный stochastic interpolant | 16.02 / 33.32 млн |
+| `i2sb` | Bridge objective с нуля, U-Net-120, без pretrained ADM | 17.29 / 17.29 млн |
 
-В midpoint-абляции меняется также распределение мощности шума, потому что σ²=λt(1−t). Её нельзя интерпретировать как абсолютно изолированное изменение времени. Antithetic тратит больше вычислений на шаг, поэтому при равном времени сделает меньше обновлений. GAN и MGM по умолчанию не получают дополнительный MSE-loss после warmup; это сравнение objectives, а не настроенный production SRGAN. `reconstruction_weight=0` явно записан в плане.
+Наш U-Net имеет ширины 120/240/480, линейный residual без tanh; field получает sinusoidal time embedding. G MGM/MSE имеет hard pooling projection. ESRGAN работает в [0,1], остальные — в [-1,1]; evaluator приводит outputs к общему диапазону. ESRGAN/I²SB оцениваются с native output и с той же финальной pooling projection. Внутри reverse chain проекция не добавляется. Это адаптации на нашей pooling-задаче, а не воспроизведение исходных bicubic/ImageNet-256 метрик.
 
-Три seed: 0, 1, 2. Для каждого отдельно обучается общий MSE warmup, затем все шесть методов начинают с его **обычных весов G** и свежих оптимизаторов. Финальные метрики считаются для EMA каждого метода; лучшего checkpoint по validation автоматически не выбираем.
+Инициализация: MSE/MSE+perceptual/MGM используют общие обычные веса MSE warmup для своего seed и свежие optimizer states. ESRGAN получает собственный RRDB L1 warmup. I²SB обучается с нуля. Внешние SR/diffusion/GAN checkpoints не используются; ImageNet VGG19 для loss и AlexNet для LPIPS раскрываются как frozen feature networks.
 
-## Бюджет
-
-| Этап | Число задач | Обучение на задачу | Сумма обучения | Slurm limit на задачу |
-|---|---:|---:|---:|---:|
-| Общий MSE warmup | 3 | 120 минут | 360 минут | 130 минут |
-| 6 методов × 3 seed | 18 | 120 минут | 2160 минут | 130 минут |
-| Итого | 21 | | **42 GPU-часа** | **до 45.5 GPU-часа** |
-
-Лимиты оставляют время на загрузку и evaluation. Фактическая скорость именно V100 не измерялась; если оценка не успевает, сохранённый полный checkpoint можно оценить отдельно. При одной одновременно занятой GPU это примерно 42–46 часов работы без очереди. Несколько GPU сокращают календарное время, а GPU-часы остаются прежними. Подготовка данных, установка окружения, пилот, повторные запуски и финальная test-оценка в эти 45.5 часа не включены. По умолчанию очередь использует одну GPU одновременно; `--max-parallel 3` разрешает три.
-
-Новые планы добавляют десять минут и к warmup, и к основному обучению. Это учитывает USR1@120, который по документации Slurm может прийти ещё на 60 секунд раньше, и оставляет запас на старт процесса и оценку. В самых ранних планах warmup limit=15 минут; они не изменяются автоматически. Для восстановления такого старого 12-минутного warmup можно переопределить лимит через `sbatch --time=22 ... warmup --resume`, сохранив исходный план и checkpoint. Увеличение времени обучения само по себе не исправляет прерывание по сигналу: для этого нужен запас в лимите Slurm.
-
-Таймер включает ожидание train batches, обновления и периодическое сохранение. CUDA синхронизируется на границах итераций. При resume продолжается оставшийся бюджет; время потерянной работы после последнего checkpoint отдельно видно в Slurm accounting. Сравнивать следует также `steps`, `successful_g`, `consumed` и кривые losses.
-
-## Данные и архитектура
-
-Источник — [официальный DIV2K](https://data.vision.ee.ethz.ch/cvl/DIV2K/). Берём 800 HR train-изображений. Из 100 официальных validation-изображений делаем фиксированное разделение 50 validation / 50 held-out test **по исходным изображениям**, seed=123. Это наш held-out split, не официальный закрытый test DIV2K.
-
-Для быстрого I/O готовим банк uint8: восемь случайных 256×256 crop на каждое train-изображение. В обучении берём случайные 128×128 под-crop с отражениями и поворотами. На оценке — по пять фиксированных 256×256 crop на исходное изображение: углы и центр. Таким образом, обучение 32→128, оценка 64→256. Модель полностью свёрточная.
-
-LR получается `avg_pool2d(HR,4)`. Это контролируемая деградация, **не стандартный bicubic DIV2K benchmark**. Она позволяет точно проектировать выход на условие:
-
-`P_c(y) = y + nearest(c − avg_pool2d(y,4))`.
-
-Все обучаемые G используют эту проекцию. Поэтому почти нулевая raw LR-error заложена в архитектуру, а не доказывает преимущество MGM. Отдельно считаем ошибку после clipping и сравниваем обычный bicubic и projected bicubic. Clipping может нарушить точное условие.
-
-G — residual U-Net с ширинами 48/96/192, GroupNorm, 3-канальным пространственным Gaussian latent, bicubic skip и ограниченной через tanh поправкой. Поле — U-Net той же ширины, получает LR, смесь и признаки t. GAN — условный PatchGAN со spectral normalization. Модели не используют pretrained генераторы. AlexNet нужен только для LPIPS.
-
-По умолчанию batch=16, FP16 AMP с GradScaler, вычисление losses в FP32. BF16 не требуется. При OOM пилота попробуй `--batch-size 8` в **новом плане**, затем одинаково используй этот batch для всех методов. Точный расход VRAM пока не проверен. Для диагностики численных проблем есть `--fp32`; это тоже отдельный план.
-
-## Установка на Linux-кластере
+## Установка окружения на кластере
 
 ```bash
-git clone git@github.com:kirillkatsuba/mgm_i2i.git
-cd mgm_i2i
+cd /path/to/mgm_i2i
 conda create -n mgm_i2i python=3.11 -y
 conda activate mgm_i2i
 python -m pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu118
@@ -66,120 +34,102 @@ export CONDA_ENV=mgm_i2i
 export CONDA_SH="$(conda info --base)/etc/profile.d/conda.sh"
 ```
 
-CUDA wheels выбраны по [официальной матрице PyTorch](https://pytorch.org/get-started/previous-versions/). Драйвер узла должен поддерживать выбранный wheel. Если администраторы требуют другой CUDA runtime, согласуй torch/torchvision по этой матрице. Mac `requirements.lock`, `.venv` и offline wheels не предназначены для Linux CUDA. Можно использовать существующее подходящее окружение: экспортировать абсолютный `PYTHON_BIN` и не задавать `CONDA_ENV`.
+CUDA wheels должны соответствовать драйверу GPU-узла. Можно использовать существующий Python: экспортировать абсолютный `PYTHON_BIN` вместо `CONDA_ENV`. Mac `.venv` и offline wheels не переносимы на Linux. Все data/run/weights paths должны быть доступны с GPU-узлов; скрипт задаёт checkout как `--chdir`.
 
-## Скачивание и подготовка — один раз, с интернетом
+## Подготовка данных и frozen weights
+
+Выполнять один раз на узле с интернетом, где разрешена подготовка данных:
 
 ```bash
-python scripts/cluster_prepare.py --data-root data/div2k --weights-root weights
-python -m pytest -q tests/test_cluster.py tests/test_mgm.py
+python scripts/cluster_prepare.py --data-root data/div2k_random128 --weights-root weights
+python -m pytest -q tests/test_cluster.py tests/test_cluster_baselines.py tests/test_baseline_preprocessing.py tests/test_mgm.py
 ```
 
-Подготовка скачивает только официальные HR train/valid ZIP и AlexNet weights. Нужны `curl` и ориентировочно 10 ГБ свободного диска для архивов, банков и весов; checkpoints потребуют дополнительное место. ZIP не распаковываются полностью. Происхождение, SHA-256, split и координаты crop сохраняются в `data/div2k/manifest.json`. SHA архивов фиксируется после скачивания, это не сверка с опубликованной авторами контрольной суммой; содержимое дополнительно проверяется по ожидаемым именам и CRC ZIP. AlexNet сверяется с hash-prefix официального имени файла. Повторная подготовка проверяет банки, файлы `.part` позволяют продолжить загрузку. Чтобы изменить подготовку, используй новую папку данных.
-
-На GPU-узлах сеть не нужна. `cluster_submit.py --submit` проверяет банки и веса перед вызовом `sbatch`; при отсутствии файлов очередь не создаётся. Подготовку больших данных запускай там, где это допускают правила кластера.
-
-## Короткий пилот
+Если оригинальные HR ZIP уже есть, повторно не скачивай:
 
 ```bash
-python scripts/cluster_submit.py --run-root cluster_runs/pilot --pilot
-python scripts/cluster_submit.py --run-root cluster_runs/pilot --pilot --submit
+python scripts/cluster_prepare.py --data-root data/div2k_random128 \
+  --archive-root data/div2k/downloads --weights-root weights
 ```
 
-Первая команда только пишет план и печатает команды. Вторая ставит один warmup на 1 минуту, MGM на 2 минуты и сбор отчёта. Пилот проверяет весь путь, включая LPIPS и сохранение. Он не предназначен для вывода о качестве. Проверь логи, наличие `val_metrics.json`, `complete: true`, `peak_allocated_bytes_this_session` в `status.json` и отсутствие массового пропуска обновлений из-за FP16 overflow. Тесты и пилот выше **на момент публикации кода не выполнены**.
+Подготовка скачивает официальные DIV2K HR train/valid ZIP, AlexNet и VGG19 (`vgg19-dcbb9e9d.pth`). Последний файл содержит стандартный checkpoint, но loss загружает только feature layers, без classifier. На GPU-узлах сеть не нужна: модели не скачивают веса автоматически. `--skip-vgg` допустим только для серии без ESRGAN/MSE+perceptual. Submit проверяет наличие/хеши нужных весов и всех prepared файлов до вызова sbatch.
 
-## Основная очередь
+Нужно место для архивов, полных uint8 NPY train images (примерно `3 × сумма(H×W)` байт плюс заголовки), frozen weights и checkpoints. Для ширины120 checkpoint с optimizer states занимает существенно больше места, чем прежняя компактная сеть; не используй прежнюю оценку объёма center128-bank. В manifest сохраняются split, координаты eval crop, источники и SHA файлов. Повторная подготовка проверяет данные; другая подготовка в тот же root запрещена.
+
+Для прежнего all-center режима есть `--crop-mode center --data-root data/div2k_center128`, для v1 — `--crop-mode legacy --data-root data/div2k`. Старые планы/checkpoints читаются с исходными width, архитектурой и data protocol. Новые планы v4 требуют `random128-v3`, новый run root и warmup.
+
+## Пилот всех пяти методов
 
 ```bash
-python scripts/cluster_submit.py --run-root cluster_runs/full_2h --warmup-minutes 120 --train-minutes 120
-python scripts/cluster_submit.py --run-root cluster_runs/full_2h --warmup-minutes 120 --train-minutes 120 --submit
+python scripts/cluster_submit.py --run-root cluster_runs/pilot_sr_v4 --pilot --max-parallel 4
+python scripts/cluster_submit.py --run-root cluster_runs/pilot_sr_v4 --pilot --max-parallel 4 --submit
+```
+
+Первая команда только пишет неизменяемый `plan.json`, SHA и печатает команды. Вторая ставит jobs. Пилот: один seed, MSE/RRDB warmup по 1 минуте, четыре main метода по 2 минуты, I²SB 3 минуты; eval I²SB NFE=1/4. Это 13 GPU-минут training плюс evaluation/загрузка/сохранение, не эксперимент для вывода о качестве.
+
+Если GRES кластера различает GPU, добавь одинаковые аргументы к обеим командам, например `--gpu-type v100` или подходящий `--constraint`. Точное имя типа зависит от конфигурации Slurm. По умолчанию запрашиваются 1 GPU, 4 CPU и 32 GB RAM на GPU-задачу. `--memory-gb` — host RAM, не VRAM.
+
+При OOM выбери общий `--batch-size 8` в **новом** pilot run root, затем используй его для всей серии. Gradient accumulation в текущем engine не реализован; изменение batch нужно раскрывать. `--fp32` отключает AMP для отдельного диагностического плана. Перед main проверь `complete: true`, успешные G updates, отсутствие массового FP16 skipping, `peak_allocated_bytes_this_session`, все metrics и PNG. Test при пилоте не используется.
+
+## Основная серия и параллельность
+
+```bash
+python scripts/cluster_submit.py --run-root cluster_runs/sr_v4 --max-parallel 4
+python scripts/cluster_submit.py --run-root cluster_runs/sr_v4 --max-parallel 4 --submit
+```
+
+Defaults: три seed (0/1/2), пять методов, train batch16, width120, FP16 AMP. Evaluation — FP32, batch1 для сопоставимой latency. I²SB: 1000 intervals, beta_max=.3, symmetric squared-linear schedule, AdamW 5e-5/EMA .99, StepLR(.99/1000 successful updates); NFE grid 1/4/16/64. MSE+perceptual weight=.01; ESRGAN weights pixel=.01, perceptual=1, GAN=.005, Adam1e-4. Это начальные настройки для validation-пилотов, не доказанно оптимальные. ESRGAN/RRDB в этой ограниченной по времени адаптации используют постоянный LR; upstream iteration milestones не перенесены механически.
+
+План состоит из зависимых массивов:
+
+1. **warmup** — 6 задач (MSE и RRDB × 3 seed), каждая 2 часа training.
+2. **train** — 15 задач. MSE/MSE+perceptual/ESRGAN/MGM по 2 часа после warmup; I²SB по 4 часа с нуля, чтобы полный budget метода/seed был также 4 часа.
+3. **eval** — 24 задачи: четыре one-pass метода × 3 seed и I²SB × 4 NFE × 3 seed, отдельный лимит 30 минут на задачу.
+4. **collect** — CPU job, сводка validation после завершения eval.
+
+`--array=…%4` ограничивает каждый GPU-массив четырьмя задачами. Фазы имеют `afterok` barrier, поэтому между ними нет перекрытия и суммарно эта серия использует не более 4 GPU одновременно. Выделение фактического количества GPU зависит от очереди и квот. Даже I²SB ждёт warmup barrier для простого общего ограничения ресурсов. Неудачная фаза блокирует следующую; автоматического продолжения незавершённого обучения нет.
+
+Физический training budget основной серии — **48 GPU-часов**, с повторным использованием общих MSE warmup. Evaluation добавляет фактическое время отдельно. Поле `allocation_gpu_hours_upper_bound` — сумма всех time limits, не ожидаемая стоимость: main array получает общий лимит 250 минут из-за четырёхчасового I²SB, но двухчасовые методы завершаются и освобождают GPU раньше. Параллельность сокращает календарное время, не GPU-часы; phase barriers и очередь не позволяют обещать ровно четырёхкратное ускорение.
+
+Для другого лимита используй, например, `--max-parallel 3` в обеих командах. Аргументы plan creation и submit должны совпадать. Повторный submit того же плана блокируется `submission.json`, в том числе при частичной ошибке постановки. Реальные job IDs записываются туда по мере submission. По умолчанию дополнительных абляций нет; можно явно задать `--variants mse mse_perceptual esrgan mgm i2sb mgm_antithetic`.
+
+## Контроль, продолжение и held-out test
+
+```bash
 squeue -u "$USER"
+python scripts/cluster_collect.py --plan cluster_runs/sr_v4/plan.json
 ```
 
-По образцу `dss_synth_generation` используется partition `rocky`, одна GPU и четыре CPU на задачу. Ресурсы памяти оставлены по умолчанию кластера. При необходимости передай `--partition`, `--constraint`, `--account`, `--cpus`. Все аргументы должны совпадать между dry-run и submission.
+Логи лежат в `logs/warmup-…`, `train-…`, `eval-…`. Каждый training run содержит config, environment/provenance, progress, `train.jsonl`, atomic `latest.pt` и `status.json`. На SIGUSR1/SIGTERM Python завершает текущий шаг, сохраняется и выходит с кодом75; `consumed` и RNG сохраняются. Лимиты warmup/main оставляют 10 минут на startup/save сверх training budget. Evaluation отделена и не расходует этот запас.
 
-Сначала array из трёх warmup. Main array из 18 задач зависит от успешного окончания **всех** warmup (`afterok`). Это простой общий барьер: ошибка одного warmup отменяет зависимую очередь. Сбор отчёта зависит от завершения main (`afterany`) и показывает пропущенные результаты. Если очередь отменена зависимостью или collect не стартовал, сбор можно вызвать вручную.
-
-`plan.json` и `plan.sha256` фиксируют настройки и соответствие индексов задач. Не редактируй план для продолжения опыта: создай новый `--run-root`. `submission.json` хранит ID принятых задач. Повторная отправка того же плана блокируется, чтобы случайно не запустить дубликаты. Если отправка оборвалась посередине, сначала проверь ID и `squeue`; уже принятые задания сохраняются.
-
-Новый план создаёт собственные двухчасовые warmup; старые результаты сохраняются. Если в старой команде явно указано `--warmup-minutes 12`, замени на `--warmup-minutes 120`: явный аргумент имеет приоритет над новым значением по умолчанию. Короткий режим `--pilot` по-прежнему использует 1 минуту warmup и 2 минуты основного обучения.
-
-## Прогресс обучения
-
-Во время warmup и основного обучения отображается tqdm. Пример формата, не результат эксперимента:
-
-```text
-mgm/seed0  25.00%|#####               |, elapsed=00:30:00/02:00:00 remaining=01:30:00 step=4000 g=0.01 mse=0.02 aux=0.03 skipped_g=0 skipped_aux=0
-```
-
-Процент относится к **израсходованному времени**, не к сходимости модели. `elapsed` включает предшествующие сессии при resume, `remaining` — остаток бюджета обучения, без финальной оценки и ожидания Slurm. В интерактивном терминале полоса обновляется примерно раз в секунду. В обычном файле Slurm каждая перерисовка становится новой строкой, примерно раз в 30 секунд, чтобы `tail -f` работал без управляющих символов возврата каретки. При завершении или прерывании выводится последняя строка; прерывание не подменяется прогрессом 100%. Во время длительного чтения данных или сохранения обновление появится после возвращения в цикл обучения.
-
-Последние losses и счётчики переполняемых градиентов попадают в полосу каждые 20 шагов. Полный `train.jsonl` с той же частотой сохраняется отдельно; подробные JSON-строки больше не засоряют stdout.
+Для продолжения конкретного элемента возьми его index и phase из plan и отправь отдельную задачу с `--resume` (пример: index0 train):
 
 ```bash
-tail -n 30 -f cluster_runs/full_2h/logs/train-*.out
+sbatch --array=0 --gpus=1 --cpus-per-task=4 --mem=32G --time=250 \
+  --chdir="$PWD" --output=cluster_runs/sr_v4/logs/resume-%A_%a.out \
+  slurm/cluster.sbatch "$PWD/cluster_runs/sr_v4/plan.json" train --resume
 ```
 
-Файлы появятся после фактического старта основных задач. До этого смотри `warmup-*.out` в той же папке. tqdm уже указан в `requirements-cluster.txt`.
+`--resume-if-exists` позволяет переотправить выбранные entries, продолжая существующие checkpoints и начиная отсутствующие. Завершённые checkpoints не переобучаются. Новые зависимости downstream jobs после отказа нужно выставлять на новые job IDs: изменение уже завершившегося job не исправляет старый afterok. Не редактируй подписанный plan и не запускай два процесса в один output directory одновременно.
 
-## Результаты и восстановление
+После выбора гиперпараметров и NFE на validation можно вручную оценить весь eval array на test (для стандартных defaults 24 элемента):
 
 ```bash
-python scripts/cluster_collect.py --plan cluster_runs/full_2h/plan.json
+sbatch --array=0-23%4 --gpus=1 --cpus-per-task=4 --mem=32G --time=30 \
+  --chdir="$PWD" --output=cluster_runs/sr_v4/logs/test-%A_%a.out \
+  slurm/cluster.sbatch "$PWD/cluster_runs/sr_v4/plan.json" eval --split test
 ```
 
-В корне плана появятся `val_runs.csv`, `val_summary.md` и JSON. Для каждого run: `config.json`, `environment.json`, `status.json`, `train.jsonl`, `latest.pt`, `val_metrics.json`, оценки по crop и исходным изображениям, `val_samples.png`. В grid фиксированные первые восемь crop, столбцы: nearest LR / bicubic / projected bicubic / HR / draw 1 / draw 2. Seed генерации фиксирован по crop, не зависит от batch size; best-of-N не используется.
+После завершения: `python scripts/cluster_collect.py --plan cluster_runs/sr_v4/plan.json --split test`. Если variants/NFE/seeds изменены, границы массива берутся из `len(plan['eval'])`. Test сам по себе не запускается после training. Все NFE можно показать как заранее заявленную curve; выбирать лучший режим по test нельзя.
 
-Для восстановления **полных фотографий**, без переобучения и тайлов, используй отдельный режим из [FULL_IMAGES.md](FULL_IMAGES.md). Он читает исходный DIV2K ZIP и создаёт `full_val/` с полноразмерными PNG, HTML-сравнением и отдельными PSNR/SSIM. С основной crop-таблицей эти метрики не смешиваются.
+## Метрики и ограничения выводов
 
-Git на вычислительном узле необязателен. Если команда недоступна, завершается ошибкой или не отвечает за 5 секунд, поля `git_commit`/`git_status` получают `unavailable`; обучение и evaluation продолжаются. Пустой `git_status` означает успешно проверенное чистое рабочее дерево.
+Оценка использует EMA и фиксированные draws на одинаковых 50 фотографиях. PSNR/SSIM — RGB [0,1] после clipping, без border shave; LPIPS AlexNet v0.1 на HR128. Отдельно записываются LR consistency до/после clipping, diversity и outputs с общей финальной projection. Hard projection гарантирует raw LR consistency конструктивно; это не преимущество MGM loss.
 
-Checkpoint сохраняется атомарно каждые 120 секунд и при штатном окончании. Запрошен сигнал Slurm USR1 за 120 секунд до time limit; из-за точности планировщика он может прийти ещё на 60 секунд раньше. Обучение заканчивает текущую итерацию, сохраняется и возвращает код 75. Имена полученных сигналов записываются в `status.json` и checkpoint, а причина остановки печатается в лог. SIGTERM обрабатывается аналогично; при немедленном SIGKILL сохраняется только предыдущий checkpoint. Автоматического requeue нет.
+I²SB sampler начинается с nearest(LR), делает заявленное число вызовов сети и coarse posterior transitions. NFE1 детерминирован без дополнительного endpoint noise. У сети нет отдельного bicubic skip/extra LR concat. Последняя posterior mean возвращается на index0, как в upstream, без подмены на clean prediction или проекции внутри sampler. Это наш U-Net и training с нуля; upstream использует pretrained ADM.
 
-Пример восстановления **конкретного** train index=4 (прочитай его параметры в `plan.json`). Выполняй из корня клона, когда исходная задача уже завершилась:
+Результаты находятся в `<variant>/seedN/eval_nfeK/val_metrics.json`, изображениях и PNG grid. Collector сохраняет `val_runs.csv`, `val_summary.md/json`; NFE — отдельные строки, mean±sample SD по seed. Время warmup записывается отдельно от main. Инференс timing включает весь sampler/NFE и генерацию bridge noise, исключает transfer/metrics/final projection и первый batch; FP32 batch1 одинаков для всех. Collector отмечает разные GPU или eval batch sizes: такие времена напрямую не ранжировать.
 
-```bash
-mkdir -p slurm/logs
-sbatch --export=ALL --array=4 --time=02:10:00 slurm/cluster.sbatch "$PWD/cluster_runs/full_2h/plan.json" train --resume
-```
+Результаты старой v1-серии не смешиваем с новой архитектурой/данными. Низкий LPIPS и высокий PSNR могут конфликтовать; преимущества оцениваем по quality–latency curve, визуальным примерам, устойчивости seed и фактическому training budget. По короткому пилоту нельзя заключать о сходимости или превосходстве.
 
-Resume использует тот же план, параметры, state оптимизаторов/scaler, EMA, RNG и следующую train sample. Prefetch DataLoader не меняет последовательность данных: преобразования определяются sample index. Это восстановление логического состояния, не обещание побитовой идентичности CUDA между разными GPU/версиями. Если обучение уже завершено, `--resume` повторяет только evaluation. При изменении окружения сведения добавляются в `environment.json`.
-
-Если нужны только метрики (например, evaluation не успела):
-
-```bash
-sbatch --export=ALL --array=4 --time=10 slurm/cluster.sbatch "$PWD/cluster_runs/full_2h/plan.json" train --evaluate-only
-```
-
-Для неудачного warmup аналогично укажи `warmup` и его index. После восстановления всех warmup отменённый main array нужно отправить заново по команде из dry-run без старой зависимости, предварительно убедившись, что дубликатов нет. Не запускай одновременно две задачи в одну output-папку. Загружай только свои доверенные checkpoints: они содержат pickle-состояния оптимизатора и RNG.
-
-## Метрики и финальный test
-
-- PSNR/SSIM: RGB, output clipped в [0,1], без удаления границы; SSIM Gaussian 11×11 valid. PSNR сначала на каждом crop, затем среднее внутри исходного изображения, затем между изображениями.
-- LPIPS: AlexNet v0.1, исходный размер 256×256, меньший лучше. На CIFAR в старом прототипе протокол другой — числа между ними не сравнивать.
-- Разнообразие: MSE и LPIPS двух draw для одного LR. Большее значение само по себе не означает правильное условное распределение.
-- LR-consistency: MSE в шкале [-1,1], отдельно raw и clipped. Также доля выходов за [-1,1].
-- Скорость: синхронизированный forward G в FP32, без первого batch, передачи данных и генерации latent. Это throughput при указанном eval batch, не latency одного изображения и не сравнение с diffusion.
-- Среднее и sample SD по трём seed. Пять crop одного фото не считаются независимыми примерами; при пропавшем seed отчёт явно показывает неполное покрытие.
-
-Validation используй для диагностики и фиксации протокола. После этого однократно оцени все методы на нашем held-out test:
-
-```bash
-sbatch --export=ALL --array=0-17%1 --time=10 slurm/cluster.sbatch "$PWD/cluster_runs/full_2h/plan.json" train --evaluate-only --split test
-# После окончания array:
-python scripts/cluster_collect.py --plan cluster_runs/full_2h/plan.json --split test
-```
-
-Эта дополнительная оценка не входит в основной budget. Test нельзя использовать для подбора параметров. На реальных изображениях для каждого LR имеется один HR-target; поэтому правильность полного условного распределения строго здесь не проверяется. Сохрани синтетический опыт с известными двумя модами как отдельную часть доказательства.
-
-## Математика реализованного шага
-
-Для одного `c=D(x)` генерируем `y=G(c,z)`, выбираем `t∼U[0,1/2]`, скрытый `b∼Bernoulli(1/2)` и Gaussian ε. Вес real равен t при b=0 и 1−t при b=1. Смесь `m=(1−w)y+w x+sqrt(λt(1−t)) ε`, target `δ=x−y`. При flip **не меняем знак δ**. Поле видит `(c,t,m)`, но не b.
-
-Поле минимизирует `mean((f−δ)²)` при detached y. G минимизирует `mean(f(2δ−f))`, замораживая параметры поля, но сохраняя производные и через m, и через δ. Это условная адаптация вариационной цели статьи; loss поля эквивалентен максимизации по f с точностью до слагаемого, постоянного при обновлении поля. Для G это слагаемое уже зависит от генератора, поэтому просто минимизировать field MSE вместо generator objective нельзя.
-
-Практические отличия от большой постановки авторов: компактная архитектура, projection, shared MSE warmup, EMA, gradient clipping, один auxiliary step на один G step, короткий бюджет и условный датасет. Чистая цель MGM относится к варианту `mgm`; critic-only noise отдельно помечен эвристикой. Главная статья и подробный разбор — в [исследовательском плане](offline/THEORY_AND_RESEARCH_PLAN.md).
-
-При защите покажи: формулу и hidden flip; синтетику; protocol DIV2K; таблицу mean±SD; фиксированные примеры; время и число шагов; ограничения. В [AI_AND_COMPUTE.md](offline/AI_AND_COMPUTE.md) внеси реальные расходы всех запусков, включая пилот, ошибки и test. Не подменяй их запланированными 42 GPU-часами.
-
-Справочники: [Slurm arrays](https://slurm.schedmd.com/job_array.html), [sbatch и signals/dependencies](https://slurm.schedmd.com/sbatch.html), [PyTorch AMP](https://docs.pytorch.org/tutorials/recipes/recipes/amp_recipe.html).
+Исходные формулы/архитектуры сверены с [I²SB diffusion](https://github.com/NVlabs/I2SB/blob/master/i2sb/diffusion.py), [runner](https://github.com/NVlabs/I2SB/blob/master/i2sb/runner.py), [RRDBNet](https://github.com/XPixelGroup/BasicSR/blob/master/basicsr/archs/rrdbnet_arch.py), [ESRGAN objective](https://github.com/XPixelGroup/BasicSR/blob/master/basicsr/models/esrgan_model.py). Это локальная реализация метода, не импорт upstream training stack. Native preprocessing helpers остаются справочными. Дополнительный старый full-frame utility из [FULL_IMAGES.md](FULL_IMAGES.md) поддерживает только наш U-Net G; основное сравнение всех моделей выполняет новый crop evaluator.

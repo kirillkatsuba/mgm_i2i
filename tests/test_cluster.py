@@ -1,4 +1,4 @@
-"""Authored for execution on the cluster; not executed during code preparation."""
+"""CPU regression checks for cluster models, planning, and training helpers."""
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -12,7 +12,7 @@ from torch.nn import functional as F
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
-from mgm_i2i.cluster.models import Generator, Field, project
+from mgm_i2i.cluster.models import Generator, Field, TimeEmbedding, project, get_architecture_version
 from mgm_i2i.cluster.data import CropBank, SampleRange
 from mgm_i2i.losses import observation, variational_loss
 
@@ -62,6 +62,53 @@ def test_projection_and_generator_enforce_same_lr():
     assert torch.allclose(F.avg_pool2d(fake,4),c,atol=1e-6)
 
 
+def test_new_generator_can_predict_residuals_larger_than_one():
+    gen = Generator(width=8, consistency=False)
+    with torch.no_grad():
+        gen.net.out.bias.fill_(3.)
+    c = torch.zeros(1, 3, 8, 8)
+    result = gen(c, torch.zeros(1, 3, 32, 32))
+    assert torch.allclose(result, torch.full_like(result, 3.))
+
+
+def test_time_embedding_conditions_field_and_receives_gradients():
+    torch.manual_seed(12)
+    field = Field(width=8)
+    torch.nn.init.normal_(field.net.out.weight, std=.05)
+    c, x = torch.randn(1, 3, 8, 8), torch.randn(1, 3, 32, 32)
+    t = torch.tensor([.1, .4]).reshape(2, 1, 1, 1)
+    result = field(c.expand(2, -1, -1, -1), t, x.expand(2, -1, -1, -1))
+    assert result.shape == (2, 3, 32, 32)
+    assert not torch.allclose(result[0], result[1])
+    result.square().mean().backward()
+    assert field.time_embedding.mlp[0].weight.grad.abs().sum() > 0
+    assert field.net.mid[0].time_projection.weight.grad.abs().sum() > 0
+    embedding = TimeEmbedding(8)
+    assert torch.equal(embedding(t), embedding(t.reshape(2, 1)))
+    with pytest.raises(ValueError, match='one MGM time'):
+        embedding(torch.zeros(2, 2))
+
+
+def test_unversioned_checkpoints_preserve_original_model_behavior():
+    assert get_architecture_version({}) == 1
+    assert get_architecture_version({'architecture_version': 2}) == 2
+    with pytest.raises(ValueError, match='Unsupported architecture'):
+        get_architecture_version({'architecture_version': 3})
+    gen = Generator(width=8, consistency=False, architecture_version=1)
+    field = Field(width=8, architecture_version=1)
+    # Original checkpoints had six generator channels, ten field channels,
+    # and no embedding parameters. Strict restore must keep that contract.
+    assert gen.state_dict()['net.stem.weight'].shape[1] == 6
+    assert field.state_dict()['net.stem.weight'].shape[1] == 10
+    assert not any('time_' in key for key in field.state_dict())
+    restored = Field(width=8, architecture_version=get_architecture_version({}))
+    restored.load_state_dict(field.state_dict(), strict=True)
+    with torch.no_grad():
+        gen.net.out.bias.fill_(3.)
+    result = gen(torch.zeros(1, 3, 8, 8), torch.zeros(1, 3, 32, 32))
+    assert torch.allclose(result, torch.full_like(result, torch.tanh(torch.tensor(3.)).item()))
+
+
 def test_field_freeze_keeps_generator_gradient_paths():
     c = torch.randn(2,3,8,8)
     real = torch.randn(2,3,32,32)
@@ -92,28 +139,39 @@ def test_plan_budget_and_common_initialization(tmp_path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     args = SimpleNamespace(data_root=tmp_path/'data', weights_root=tmp_path/'weights',
-                           run_root=tmp_path/'runs', width=48,batch_size=16,cpus=4,fp32=False,
+                           run_root=tmp_path/'runs', width=120,batch_size=16,cpus=4,fp32=False,
                            partition='rocky',max_parallel=1,constraint='',account='',
-                           seeds=[0,1,2],variants=list(module.VARIANTS),
+                           seeds=[0,1,2],variants=list(module.DEFAULT_VARIANTS),
                            warmup_minutes=module.DEFAULT_WARMUP_MINUTES,
                            train_minutes=module.DEFAULT_TRAIN_MINUTES)
     plan = module.make_plan(args)
-    assert len(plan['warmup']) == 3 and len(plan['train']) == 18
-    assert all(item['config']['seconds'] == 7200 for item in plan['warmup'] + plan['train'])
-    assert plan['budget']['training_gpu_hours'] == pytest.approx(42.)
-    assert plan['budget']['allocation_gpu_hours_upper_bound'] == pytest.approx(45.5)
+    assert len(plan['warmup']) == 6 and len(plan['train']) == 15 and len(plan['eval']) == 24
+    assert all(item['config']['seconds'] == (14400 if item['config']['method'] == 'i2sb' else 7200)
+               for item in plan['warmup'] + plan['train'])
+    assert all(item['config']['architecture_version'] == 2 for item in plan['warmup'] + plan['train'])
+    assert all(item['config']['width'] == 120 for item in plan['warmup'] + plan['train'])
+    assert all(item['config']['data_protocol'] == 'random128-v3' and
+               item['config']['crop'] == item['config']['eval_crop'] == 128
+               for item in plan['warmup'] + plan['train'])
+    assert plan['budget']['training_gpu_hours'] == pytest.approx(48.)
+    assert plan['budget']['allocation_gpu_hours_upper_bound'] == pytest.approx(87.5)
     assert plan['budget']['warmup_limit_minutes'] == 130
-    assert plan['budget']['train_limit_minutes'] == 130
+    assert plan['budget']['train_limit_minutes'] == 250
     # The earliest warning is time_limit - 120s - 60s. It must leave startup
     # headroom as well as the full requested training interval.
     for phase, key in [('warmup', 'warmup_limit_minutes'), ('train', 'train_limit_minutes')]:
         earliest_warning = plan['budget'][key]*60 - 120 - 60
         assert earliest_warning - plan[phase][0]['config']['seconds'] >= 120
     for seed in args.seeds:
-        assert len({x['init'] for x in plan['train'] if x['config']['seed'] == seed}) == 1
+        unet = [x for x in plan['train'] if x['config']['seed'] == seed and
+                x['config']['method'] in ('mse', 'mse_perceptual', 'mgm')]
+        assert len({x['init'] for x in unet}) == 1
+        esrgan = next(x for x in plan['train'] if x['config']['seed'] == seed and x['config']['method'] == 'esrgan')
+        assert esrgan['init'] != unet[0]['init']
     cmds = module.commands(plan, tmp_path/'plan.json')
     assert any('afterok:' in word for word in cmds[1])
-    assert any('afterany:' in word for word in cmds[2])
+    assert any('afterok:' in word for word in cmds[2])
+    assert any('afterany:' in word for word in cmds[3])
 
 
 def test_progress_resumes_clock_and_writes_log_lines():
@@ -145,3 +203,151 @@ def test_progress_clamps_deadline_overshoot():
     assert progress.bar.n == 7200
     assert '100.00%' in output.getvalue()
     assert 'remaining=00:00:00' in output.getvalue()
+
+
+def test_central_bank_preserves_pixels_without_random_spatial_transforms(tmp_path):
+    pixels = np.random.default_rng(31).integers(0, 256, (1, 128, 128, 3), dtype=np.uint8)
+    path = tmp_path/'train.npy'
+    np.save(path, pixels)
+    expected = torch.from_numpy(pixels[0].transpose(2, 0, 1).copy())
+    train = CropBank(path, seed=11, mode='center')
+    validation = CropBank(path, training=False, mode='center')
+    for index in [0, 1, 15, 10000]:
+        assert torch.equal(train[index], expected)
+    assert torch.equal(validation[0], expected)
+    # A central crop of an old randomly selected 256 bank is not the center
+    # of the original photograph and must not silently become the new data.
+    np.save(path, np.zeros((1, 256, 256, 3), dtype=np.uint8))
+    with pytest.raises(ValueError, match='original central'):
+        CropBank(path, mode='center')
+
+
+def test_central_protocol_rejects_old_manifest_but_legacy_runs_still_load(tmp_path):
+    import json
+    from mgm_i2i.cluster.data import validate_data_protocol
+    manifest = tmp_path/'manifest.json'
+    cfg = dict(data_protocol='center128-v2', crop=128, eval_crop=128)
+    manifest.write_text(json.dumps({'preparation': {'bank_size': 256, 'patches_per_image': 8}}))
+    with pytest.raises(ValueError, match='prepare fresh data'):
+        validate_data_protocol(tmp_path, cfg)
+    validate_data_protocol(tmp_path, {})
+    manifest.write_text(json.dumps({'preparation': {
+        'protocol': 'center128-v2', 'bank_size': 128, 'patches_per_image': 1}}))
+    validate_data_protocol(tmp_path, cfg)
+    with pytest.raises(ValueError, match='prepare fresh data'):
+        validate_data_protocol(tmp_path, dict(cfg, eval_crop=256))
+
+
+@pytest.mark.parametrize('crop_mode', ['center', 'random'])
+def test_preparation_extracts_original_centers_and_image_level_split(tmp_path, monkeypatch, crop_mode):
+    import io
+    import json
+    import zipfile
+    from PIL import Image
+    spec = importlib.util.spec_from_file_location('cluster_prepare', ROOT/'scripts/cluster_prepare.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    archives, weights = tmp_path/'archives', tmp_path/'weights'
+    archives.mkdir()
+    # Odd dimensions exercise exact central coordinates; no resizing allowed.
+    pixels = np.random.default_rng(19).integers(0, 256, (135, 143, 3), dtype=np.uint8)
+    png = io.BytesIO()
+    Image.fromarray(pixels).save(png, format='PNG')
+    for split, ids in [('train', range(1, 801)), ('valid', range(801, 901))]:
+        with zipfile.ZipFile(archives/f'DIV2K_{split}_HR.zip', 'w') as z:
+            for image_id in ids:
+                z.writestr(f'DIV2K/{image_id:04d}.png', png.getvalue())
+    weight = weights/'hub/checkpoints/alexnet-owt-7be5be79.pth'
+    weight.parent.mkdir(parents=True)
+    weight.write_bytes(b'unit-test placeholder, never loaded')
+    original_digest = module.digest
+    monkeypatch.setattr(module, 'digest', lambda path: '7be5be79' if Path(path) == weight
+                        else original_digest(path))
+
+    def offline_download(url, path):
+        assert path.exists(), f'Unexpected download: {url}'
+
+    monkeypatch.setattr(module, 'download', offline_download)
+    args = SimpleNamespace(data_root=tmp_path/'center', weights_root=weights, archive_root=archives,
+                           crop_mode=crop_mode, bank_size=128, patches_per_image=1, seed=123, skip_vgg=True)
+    module.prepare(args)
+    manifest = json.loads((args.data_root/'manifest.json').read_text())
+    sets = []
+    for split, count in [('train', 800), ('val', 50), ('test', 50)]:
+        if split == 'train' and crop_mode == 'random':
+            entries = manifest['train_images']
+            assert len(entries) == 800
+            assert not (args.data_root/'train.npy').exists()
+            np.testing.assert_array_equal(np.load(args.data_root/entries[0]['path']), pixels)
+            assert entries[0]['shape'] == list(pixels.shape)
+            assert original_digest(args.data_root/entries[0]['path']) == entries[0]['sha256']
+            sets.append({entry['image'] for entry in entries})
+            continue
+        bank = np.load(args.data_root/f'{split}.npy', mmap_mode='r')
+        assert bank.shape == (count, 128, 128, 3)
+        np.testing.assert_array_equal(bank[0], pixels[3:131, 7:135])
+        rows = manifest['banks'][f'{split}.npy']['crops']
+        assert len(rows) == count
+        assert all(row['top'] == 3 and row['left'] == 7 for row in rows)
+        ids = {row['image'] for row in rows}
+        assert len(ids) == count
+        sets.append(ids)
+    assert sets[0].isdisjoint(sets[1] | sets[2]) and sets[1].isdisjoint(sets[2])
+    # Reusing the exact prepared dataset is idempotent and verifies hashes.
+    module.prepare(args)
+    with pytest.raises(SystemExit, match='fresh --data-root'):
+        module.prepare(SimpleNamespace(**dict(vars(args), seed=124)))
+    if crop_mode == 'random':
+        from mgm_i2i.cluster.data import training_dataset, RandomImageCrops, validate_data_protocol
+        cfg = dict(data_protocol='random128-v3', crop=128, eval_crop=128, seed=9)
+        validate_data_protocol(args.data_root, cfg)
+        assert isinstance(training_dataset(args.data_root, cfg), RandomImageCrops)
+        submit_spec = importlib.util.spec_from_file_location('submit_check', ROOT/'scripts/cluster_submit.py')
+        submit = importlib.util.module_from_spec(submit_spec)
+        submit_spec.loader.exec_module(submit)
+        monkeypatch.setattr(submit, 'digest', module.digest)
+        submit.verify_data(args.data_root, weights)
+        # Full-image corruption must be detected before a job can be submitted.
+        (args.data_root/entries[0]['path']).write_bytes(b'corrupted')
+        with pytest.raises(ValueError, match='Checksum mismatch'):
+            submit.verify_data(args.data_root, weights)
+
+
+def test_random_full_image_crops_are_stateless_unaugmented_and_cover_both_images(tmp_path):
+    import json
+    from mgm_i2i.cluster.data import RandomImageCrops, validate_data_protocol
+    pixels = np.zeros((139, 147, 3), dtype=np.uint8)
+    pixels[..., 0] = np.arange(139)[:, None]
+    pixels[..., 1] = np.arange(147)[None, :]
+    images, entries = [], []
+    for i in range(2):
+        image = pixels.copy()
+        image[..., 2] = i
+        np.save(tmp_path/f'{i}.npy', image)
+        images.append(image)
+        entries.append(dict(path=f'{i}.npy', image=f'{i}.png'))
+    manifest = {'preparation': {'protocol': 'random128-v3', 'bank_size': 128,
+                                'patches_per_image': 1}, 'train_images': entries}
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    first, resumed = RandomImageCrops(tmp_path, seed=17), RandomImageCrops(tmp_path, seed=17)
+    positions, selected = set(), set()
+    for index in range(120):
+        patch = first[index]
+        assert patch.shape == (3, 128, 128) and patch.dtype == torch.uint8
+        top, left, image_id = patch[:, 0, 0].tolist()
+        expected = images[image_id][top:top+128, left:left+128].transpose(2, 0, 1)
+        np.testing.assert_array_equal(patch.numpy(), expected)
+        selected.add(image_id)
+        positions.add((top, left))
+    assert selected == {0, 1} and len(positions) > 50
+    # Discarded prefetch and arbitrary access order cannot change future samples.
+    for index in [130, 125, 122, 119, 300]:
+        assert torch.equal(first[index], resumed[index])
+    different_seed = RandomImageCrops(tmp_path, seed=18)
+    assert any(not torch.equal(first[i], different_seed[i]) for i in range(5))
+    with pytest.raises(ValueError, match='prepare fresh data'):
+        validate_data_protocol(tmp_path, dict(data_protocol='center128-v2', crop=128, eval_crop=128))
+    manifest['train_images'] = []
+    (tmp_path/'manifest.json').write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match='full train images'):
+        validate_data_protocol(tmp_path, dict(data_protocol='random128-v3', crop=128, eval_crop=128))

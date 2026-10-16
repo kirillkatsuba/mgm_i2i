@@ -14,7 +14,7 @@ PROJECT_DIR="${PROJECT_DIR:-$PWD}"
 cd "$PROJECT_DIR"
 source slurm/env.sh
 PLAN="${1:?plan path required}"
-PHASE="${2:?warmup or train required}"
+PHASE="${2:?warmup, train or eval required}"
 shift 2
 # USR1 is sent to job steps; Python finishes its current update and saves atomically.
 # Optional remaining arguments: --resume / --evaluate-only / --split test.

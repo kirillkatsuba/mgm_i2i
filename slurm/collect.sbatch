@@ -9,4 +9,6 @@ set -eo pipefail
 PROJECT_DIR="${PROJECT_DIR:-$PWD}"
 cd "$PROJECT_DIR"
 source slurm/env.sh
-"$PYTHON_BIN" scripts/cluster_collect.py --plan "${1:?plan path required}"
+PLAN="${1:?plan path required}"
+shift
+"$PYTHON_BIN" scripts/cluster_collect.py --plan "$PLAN" "$@"
