@@ -136,7 +136,7 @@ def test_slurm_submission_dependencies_and_duplicate_guard(tmp_path, monkeypatch
         commands.append(command)
         return SimpleNamespace(returncode=0, stdout=f'{700+len(commands)};cluster\n')
     monkeypatch.setattr(submit.subprocess, 'run', fake_sbatch)
-    monkeypatch.setattr(submit, 'verify_data', lambda *args: None)
+    monkeypatch.setattr(submit, 'verify_data', lambda *args, **kwargs: None)
     monkeypatch.setattr(sys, 'argv', ['cluster_submit', '--run-root', str(tmp_path), '--pilot', '--submit'])
     submit.main()
     plan = json.loads((tmp_path/'plan.json').read_text())
@@ -147,6 +147,8 @@ def test_slurm_submission_dependencies_and_duplicate_guard(tmp_path, monkeypatch
     assert '--dependency=afterok:702' in commands[2]
     assert '--dependency=afterany:703' in commands[3]
     assert all('--gpus=1' in cmd for cmd in commands[:3])
+    assert all(not arg.startswith(('--mem', '--mem-per-cpu', '--mem-per-gpu'))
+               for command in commands for arg in command)
     with pytest.raises(FileExistsError, match='Submission already'):
         submit.main()
     assert len(commands) == 4
@@ -180,6 +182,23 @@ def test_i2sb_only_plan_needs_no_warmup_and_collect_keeps_nfe_separate(tmp_path,
     assert [item['variant'] for item in summary] == ['i2sb_nfe1', 'i2sb_nfe4']
 
 
+def test_missing_reused_checkpoint_prevents_any_slurm_submission(tmp_path, monkeypatch):
+    submit = load_script('cluster_submit')
+    source, destination = tmp_path/'source', tmp_path/'critic'
+    monkeypatch.setattr(sys, 'argv', ['submit', '--run-root', str(source), '--variants', 'mgm'])
+    submit.main()
+    commands = []
+    monkeypatch.setattr(submit.subprocess, 'run', lambda command, **kwargs: commands.append(command))
+    monkeypatch.setattr(submit, 'verify_data', lambda *args: None)
+    monkeypatch.setattr(sys, 'argv', ['submit', '--run-root', str(destination),
+                                    '--variants', 'mgm_critic_noise',
+                                    '--reuse-warmup-from', str(source), '--submit'])
+    with pytest.raises(FileNotFoundError, match='Reused warmup checkpoint is missing'):
+        submit.main()
+    assert not commands
+    assert not (destination/'submission.json').exists()
+
+
 def test_runner_separates_training_from_nfe_evaluation_and_can_continue(tmp_path, monkeypatch):
     submit = load_script('cluster_submit')
     monkeypatch.setattr(sys, 'argv', ['submit', '--run-root', str(tmp_path), '--pilot'])
@@ -192,7 +211,9 @@ def test_runner_separates_training_from_nfe_evaluation_and_can_continue(tmp_path
         calls.append(('train', config['method'], resume))
         Path(output).mkdir(parents=True, exist_ok=True)
         (Path(output)/'latest.pt').touch()
-    def evaluate(checkpoint, output, split, batch, nfe=1):
+    def evaluate(checkpoint, output, split, batch, nfe=1, **kwargs):
+        assert kwargs.get('evaluation_data_root') is None
+        assert kwargs.get('evaluation_data_hash') is None
         calls.append(('eval', str(checkpoint), split, nfe))
     monkeypatch.setattr(engine, 'train', train)
     monkeypatch.setattr(metrics, 'evaluate', evaluate)

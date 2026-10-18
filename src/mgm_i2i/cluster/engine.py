@@ -1,4 +1,4 @@
-"""Time-budgeted training. Run checkpoints are trusted local pickle files."""
+"""Epoch- or time-budgeted training. Checkpoints are trusted local pickle files."""
 import copy
 import hashlib
 import json
@@ -19,6 +19,8 @@ from .data import SampleRange, training_dataset, validate_data_protocol
 from .models import Field, Discriminator, get_architecture_version
 from .baselines import build_generator, VGGDiscriminator, VGGPerceptual, I2SBBridge, relativistic_loss
 from .progress import BudgetProgress
+from .mgm_training import initialize_field, mgm_step, validate_field_checkpoint
+from .budget import TrainingBudget
 
 
 def atomic_json(path, value):
@@ -143,7 +145,7 @@ def generator_objective(gen, aux, c, real, cfg, perceptual=None, bridge=None):
     return loss, mse, fake
 
 
-def train(cfg, output, init=None, resume=False):
+def train(cfg, output, init=None, resume=False, field_init=None):
     validate_data_protocol(cfg['data_root'], cfg)
     if not torch.cuda.is_available():
         raise RuntimeError('Cluster training requires CUDA. Use scripts/train.py for the Mac prototype.')
@@ -171,6 +173,7 @@ def train(cfg, output, init=None, resume=False):
     data_hash = fingerprint(Path(cfg['data_root'])/'manifest.json')
     init_hash = None
     warmup_training_seconds = 0.
+    field_init_hash, field_warmup_seconds, field_initialization = None, 0., None
     if init and not resume:
         source = torch.load(init, map_location='cpu', weights_only=False)
         if not source['complete'] or source['data_hash'] != data_hash:
@@ -183,8 +186,24 @@ def train(cfg, output, init=None, resume=False):
         gen.load_state_dict(source['generator'])
         init_hash = fingerprint(init)
         warmup_training_seconds = source['elapsed_training_seconds']
+    if cfg['method'] == 'mgm' and not resume:
+        if cfg.get('field_initialization', 'random') == 'warmup_features':
+            if init is None:
+                raise ValueError('Field feature initialization requires a generator warmup')
+            field_initialization = initialize_field(aux, gen)
+        if field_init is not None:
+            source_field = torch.load(field_init, map_location='cpu', weights_only=False)
+            validate_field_checkpoint(source_field, cfg, data_hash, init_hash)
+            aux.load_state_dict(source_field['auxiliary'])
+            field_init_hash = fingerprint(field_init)
+            field_warmup_seconds = source_field['elapsed_training_seconds']
+            field_initialization = source_field.get('field_initialization')
+    if cfg.get('field_only', False):
+        if cfg['method'] != 'mgm':
+            raise ValueError('Field-only training applies to MGM')
+        gen.eval().requires_grad_(False)
     ema = copy.deepcopy(gen).eval().requires_grad_(False)
-    betas = (.9, .99) if cfg['method'] in ('rrdb_l1', 'esrgan') else (.5, .99)
+    betas = tuple(cfg.get('adam_betas', (.9, .99) if cfg['method'] in ('rrdb_l1', 'esrgan') else (.5, .99)))
     opt_g = (torch.optim.AdamW(gen.parameters(), lr=cfg['lr_g'], weight_decay=0.)
              if bridge is not None else torch.optim.Adam(gen.parameters(), lr=cfg['lr_g'], betas=betas))
     opt_a = torch.optim.Adam(aux.parameters(), lr=cfg['lr_aux'], betas=betas) if aux is not None else None
@@ -210,6 +229,9 @@ def train(cfg, output, init=None, resume=False):
         skipped_g, skipped_aux, successful_g = state['skipped_g'], state['skipped_aux'], state['successful_g']
         init_hash = state['init_hash']
         warmup_training_seconds = state.get('warmup_training_seconds', 0.)
+        field_init_hash = state.get('field_init_hash')
+        field_warmup_seconds = state.get('field_warmup_seconds', 0.)
+        field_initialization = state.get('field_initialization')
         history = state['sessions']
         restore_rng(state['rng'])
         if state['complete']:
@@ -234,8 +256,12 @@ def train(cfg, output, init=None, resume=False):
     history.append(session)
     atomic_json(output/'environment.json', history)
     dataset = training_dataset(cfg['data_root'], cfg)
-    loader = DataLoader(dataset, batch_size=cfg['batch_size'],
-                        sampler=SampleRange(consumed, 10**12), num_workers=cfg['workers'],
+    budget = TrainingBudget(cfg, len(dataset))
+    accumulation = cfg.get('grad_accumulation', 1)
+    if accumulation > 1 and cfg['method'] != 'mgm':
+        raise ValueError('Gradient accumulation is currently implemented for MGM only')
+    loader = DataLoader(dataset, batch_size=cfg['batch_size'] * accumulation,
+                        sampler=SampleRange(consumed, budget.target_samples or 10**12), num_workers=cfg['workers'],
                         pin_memory=True, drop_last=True, persistent_workers=cfg['workers'] > 0,
                         generator=torch.Generator().manual_seed(cfg['seed'] + 10000))
     interrupted = []
@@ -256,16 +282,22 @@ def train(cfg, output, init=None, resume=False):
                      successful_g=successful_g, skipped_g=skipped_g, skipped_aux=skipped_aux,
                      elapsed_training_seconds=elapsed + time.monotonic()-start,
                      peak_allocated_bytes_this_session=torch.cuda.max_memory_allocated(),
+                     peak_reserved_bytes_this_session=torch.cuda.max_memory_reserved(),
                      data_hash=data_hash, init_hash=init_hash, sessions=history, complete=complete,
                      warmup_training_seconds=warmup_training_seconds,
-                     received_signals=[signal.Signals(s).name for s in interrupted])
+                     field_init_hash=field_init_hash, field_warmup_seconds=field_warmup_seconds,
+                     field_initialization=field_initialization,
+                     received_signals=[signal.Signals(s).name for s in interrupted],
+                     **budget.metadata(consumed))
         temp = output/'latest.tmp.pt'
         torch.save(state, temp)
         temp.replace(latest)
         atomic_json(output/'status.json', {k: state[k] for k in (
             'step', 'consumed', 'successful_g', 'skipped_g', 'skipped_aux',
-            'elapsed_training_seconds', 'peak_allocated_bytes_this_session', 'complete', 'data_hash', 'init_hash',
-            'received_signals')})
+            'elapsed_training_seconds', 'peak_allocated_bytes_this_session', 'peak_reserved_bytes_this_session',
+            'complete', 'data_hash', 'init_hash',
+            'received_signals', 'field_init_hash', 'field_warmup_seconds',
+            'training_stop', 'target_epochs', 'target_samples', 'samples_per_epoch', 'epochs_completed')})
         return state
 
     def update(loss, optimizer, parameters):
@@ -283,38 +315,57 @@ def train(cfg, output, init=None, resume=False):
 
     progress = None
     try:
-        progress = BudgetProgress(cfg['seconds'], f'{cfg["variant"]}/seed{cfg["seed"]}',
-                                  elapsed=elapsed, step=step)
+        progress = BudgetProgress(budget.target_samples or cfg['seconds'], f'{cfg["variant"]}/seed{cfg["seed"]}',
+                                  elapsed=elapsed, step=step, consumed=consumed,
+                                  samples_per_epoch=budget.epoch_size if budget.epochs is not None else None)
         # A valid initial checkpoint also permits recovery from an early OOM.
         if not latest.exists():
             save(False)
         with (output/'train.jsonl').open('a') as log:
             for batch in loader:
-                if interrupted or elapsed + time.monotonic()-start >= cfg['seconds']:
+                if interrupted or budget.reached(consumed, elapsed + time.monotonic()-start):
                     break
                 real = batch.to(device, non_blocking=True).float().div_(127.5).sub_(1)
                 c = F.avg_pool2d(real, cfg['scale'])
                 loss_a = None
-                if aux is not None and cfg['method'] != 'esrgan':
+                diagnostics = {}
+                if cfg['method'] == 'mgm':
+                    result = mgm_step(gen, aux, real, cfg, opt_g, opt_a, scaler, mgm_objective)
+                    field_result, gen_result = result['field'], result['generator']
+                    loss_a = field_result['values']['loss']
+                    skipped_aux += not field_result['success']
+                    loss_g = gen_result['values']['loss'] if gen_result is not None else None
+                    mse = (gen_result['values']['mse'] if gen_result is not None else
+                           field_result['values']['zero_mse'])
+                    success = gen_result['success'] if gen_result is not None else False
+                    if gen_result is not None:
+                        skipped_g += not success
+                        successful_g += success
+                    diagnostics = dict(field_zero_mse=field_result['values']['zero_mse'].item(),
+                                       grad_norm_aux=field_result['grad_norm'], clipped_aux=field_result['clipped'],
+                                       grad_norm_g=gen_result['grad_norm'] if gen_result else None,
+                                       clipped_g=gen_result['clipped'] if gen_result else None,
+                                       nonfinite_gradient_aux=field_result['nonfinite_gradient'],
+                                       nonfinite_gradient_g=gen_result['nonfinite_gradient'] if gen_result else None,
+                                       amp_scale=scaler.get_scale(), effective_batch_size=len(batch))
+                elif aux is not None and cfg['method'] != 'esrgan':
                     frozen(aux, False)
                     opt_a.zero_grad(set_to_none=True)
                     with torch.no_grad(), torch.autocast('cuda', dtype=torch.float16, enabled=cfg['amp']):
                         detached = gen(c, torch.randn_like(real)).float()
-                    if cfg['method'] == 'mgm':
-                        loss_a = mgm_objective(aux, c, detached, real, cfg, False)
-                    else:
-                        with torch.autocast('cuda', dtype=torch.float16, enabled=cfg['amp']):
-                            real_score, fake_score = aux(c, real), aux(c, detached)
-                        loss_a = F.relu(1-real_score).mean() + F.relu(1+fake_score).mean()
+                    with torch.autocast('cuda', dtype=torch.float16, enabled=cfg['amp']):
+                        real_score, fake_score = aux(c, real), aux(c, detached)
+                    loss_a = F.relu(1-real_score).mean() + F.relu(1+fake_score).mean()
                     skipped_aux += not update(loss_a, opt_a, aux.parameters())
                     frozen(aux, True)
-                opt_g.zero_grad(set_to_none=True)
-                if cfg['method'] == 'esrgan':
-                    aux.requires_grad_(False)  # Keep BN train mode as in BasicSR.
-                loss_g, mse, fake = generator_objective(gen, aux, c, real, cfg, perceptual, bridge)
-                success = update(loss_g, opt_g, gen.parameters())
-                skipped_g += not success
-                successful_g += success
+                if cfg['method'] != 'mgm':
+                    opt_g.zero_grad(set_to_none=True)
+                    if cfg['method'] == 'esrgan':
+                        aux.requires_grad_(False)  # Keep BN train mode as in BasicSR.
+                    loss_g, mse, fake = generator_objective(gen, aux, c, real, cfg, perceptual, bridge)
+                    success = update(loss_g, opt_g, gen.parameters())
+                    skipped_g += not success
+                    successful_g += success
                 if success:
                     if scheduler is not None:
                         scheduler.step()
@@ -335,35 +386,38 @@ def train(cfg, output, init=None, resume=False):
                 torch.cuda.synchronize()
                 if step % cfg['log_every'] == 0:
                     row = dict(step=step, seconds=elapsed+time.monotonic()-start,
-                               g=loss_g.item(), mse=mse.item(),
+                               g=loss_g.item() if loss_g is not None else None, mse=mse.item(),
                                aux=loss_a.item() if aux is not None else None,
-                               skipped_g=skipped_g, skipped_aux=skipped_aux)
+                               skipped_g=skipped_g, skipped_aux=skipped_aux,
+                               consumed=consumed, **budget.metadata(consumed), **diagnostics)
                     log.write(json.dumps(row, allow_nan=False)+'\n')
                     log.flush()
                     progress.update(row['seconds'], step, {key: row[key] for key in
-                                    ('g', 'mse', 'aux', 'skipped_g', 'skipped_aux')})
+                                    ('g', 'mse', 'aux', 'skipped_g', 'skipped_aux')}, consumed=consumed)
                 else:
-                    progress.update(elapsed+time.monotonic()-start, step)
+                    progress.update(elapsed+time.monotonic()-start, step, consumed=consumed)
                 if time.monotonic() - previous_checkpoint >= cfg['checkpoint_seconds']:
                     save(False)
                     previous_checkpoint = time.monotonic()
-        complete = not interrupted and successful_g > 0 and elapsed+time.monotonic()-start >= cfg['seconds']
+        successful_updates = step-skipped_aux if cfg.get('field_only', False) else successful_g
+        complete = not interrupted and successful_updates > 0 and budget.reached(consumed, elapsed+time.monotonic()-start)
         result = save(complete)
-        progress.update(result['elapsed_training_seconds'], step)
+        progress.update(result['elapsed_training_seconds'], step, consumed=consumed)
         progress.close()
         if interrupted:
             print(f'Training interrupted by {result["received_signals"]}; '
-                  f'saved {latest} at {result["elapsed_training_seconds"]:.1f}/{cfg["seconds"]:.1f} '
-                  'training seconds. Resume this checkpoint; exit code 75.', flush=True)
+                  f'saved {latest} after {result["elapsed_training_seconds"]:.1f}s, '
+                  f'{consumed} patches ({result["epochs_completed"]:.3f} conditional epochs). '
+                  'Resume this checkpoint; exit code 75.', flush=True)
             raise SystemExit(75)
-        if not complete or successful_g == 0:
-            raise RuntimeError('Training did not complete any successful G updates')
+        if not complete or successful_updates == 0:
+            raise RuntimeError('Training did not complete any successful updates in the requested phase')
         print(f'Training complete: {step} steps, {successful_g} successful G updates; '
               f'{result["elapsed_training_seconds"]:.1f} training seconds; checkpoint {latest}', flush=True)
         return result
     finally:
         if progress is not None:
-            progress.update(elapsed+time.monotonic()-start, step)
+            progress.update(elapsed+time.monotonic()-start, step, consumed=consumed)
             progress.close()
         for signum, handler in old_handlers.items():
             signal.signal(signum, handler)

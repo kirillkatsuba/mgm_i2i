@@ -1,0 +1,508 @@
+{
+  "dataset": "BSD100",
+  "repository": "https://github.com/jbhuang0604/SelfExSR",
+  "commit": "8f6dd8c1d20cb7e8792a7177b4f6fd677633f598",
+  "description": "HR PNG files from the SRF_4 benchmark folder; supplied bicubic LR files are not used.",
+  "files": [
+    {
+      "path": "data/BSD100/image_SRF_4/img_001_SRF_4_HR.png",
+      "git_blob_sha1": "9fa3783f3da2fd69848c6d76deeef61be750b739",
+      "size": 336569
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_002_SRF_4_HR.png",
+      "git_blob_sha1": "b942426cc04470c67a0db4f89278cde51db77bf8",
+      "size": 202118
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_003_SRF_4_HR.png",
+      "git_blob_sha1": "874f899d1ff1ed6b70fbb9357be54c3aab10612c",
+      "size": 233585
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_004_SRF_4_HR.png",
+      "git_blob_sha1": "f90f1a82152d126953c9595a4bb4eb6e608e867b",
+      "size": 234460
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_005_SRF_4_HR.png",
+      "git_blob_sha1": "f84134cc6bff7396880271f446db8b03a44b3c9b",
+      "size": 285857
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_006_SRF_4_HR.png",
+      "git_blob_sha1": "347840b4bc65a1f90368cbd15fc4b0b2a083c8b1",
+      "size": 186848
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_007_SRF_4_HR.png",
+      "git_blob_sha1": "3ea4e8d5d499ba31108659f88209cb5790eea1fb",
+      "size": 293861
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_008_SRF_4_HR.png",
+      "git_blob_sha1": "40d0d5bb330a2cebfe6bc7bf6f5a16e53b0b4d25",
+      "size": 340890
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_009_SRF_4_HR.png",
+      "git_blob_sha1": "f280ddcf00bb57366482a470b6856f14bd6d7388",
+      "size": 261720
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_010_SRF_4_HR.png",
+      "git_blob_sha1": "203968a5036c740053a855b9c44f064ec5531f08",
+      "size": 247672
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_011_SRF_4_HR.png",
+      "git_blob_sha1": "9363308ddee2eb5c943d421f3d02b424adc70ad2",
+      "size": 257652
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_012_SRF_4_HR.png",
+      "git_blob_sha1": "40c3526e61919194113cc9ae6417218d5f795202",
+      "size": 309076
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_013_SRF_4_HR.png",
+      "git_blob_sha1": "b38373be64adc2f52af94b123058da59be953dbc",
+      "size": 254213
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_014_SRF_4_HR.png",
+      "git_blob_sha1": "dc096cd7812e2ae2663767a06df10925d47dd618",
+      "size": 226144
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_015_SRF_4_HR.png",
+      "git_blob_sha1": "4f631b60f13e2a5d9a990fb1c1d12c9be888905b",
+      "size": 295667
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_016_SRF_4_HR.png",
+      "git_blob_sha1": "f7d69e871d7c6c7248e620de275a2e401877b837",
+      "size": 314154
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_017_SRF_4_HR.png",
+      "git_blob_sha1": "97d3c9da7ab3455a5eac15ed59e0694ad42d5982",
+      "size": 187235
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_018_SRF_4_HR.png",
+      "git_blob_sha1": "a3edb70924c93acb54dbc9063776cfd8b5891152",
+      "size": 181276
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_019_SRF_4_HR.png",
+      "git_blob_sha1": "471504ad03678767f6f4dfaf0f384a5f7e837f14",
+      "size": 283343
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_020_SRF_4_HR.png",
+      "git_blob_sha1": "0a6b93d9dc5be550f1fed34a6a3cd8353e304792",
+      "size": 266353
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_021_SRF_4_HR.png",
+      "git_blob_sha1": "dbcafefa6d57621184b10818deb1fe23a9bdc03d",
+      "size": 333969
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_022_SRF_4_HR.png",
+      "git_blob_sha1": "810de66aad1a13fa84fc2c3abb83224b4ae9dbd0",
+      "size": 320370
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_023_SRF_4_HR.png",
+      "git_blob_sha1": "ab6a12c1306576452d6b13abd7e59131cc7647c2",
+      "size": 335294
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_024_SRF_4_HR.png",
+      "git_blob_sha1": "4484d547b6ae192a50e234a5c74f5707291ed276",
+      "size": 272267
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_025_SRF_4_HR.png",
+      "git_blob_sha1": "7ce582573534a29ba97955d8fa1169803f52a6f3",
+      "size": 285828
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_026_SRF_4_HR.png",
+      "git_blob_sha1": "6d307a5ac0761ca796fccec228eceae0659fbf40",
+      "size": 216207
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_027_SRF_4_HR.png",
+      "git_blob_sha1": "1a9bc1df7c0e0a4a160bab6e95befc666d4f98c8",
+      "size": 293317
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_028_SRF_4_HR.png",
+      "git_blob_sha1": "92b2750d2c4960bece99074edcaa3ad815d603e4",
+      "size": 253332
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_029_SRF_4_HR.png",
+      "git_blob_sha1": "6947471c2254fe5e6694c5009f1ae2d030f6e8ae",
+      "size": 170289
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_030_SRF_4_HR.png",
+      "git_blob_sha1": "49d60bc012f18f23302c8e181a3b12417ecc7fe2",
+      "size": 350798
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_031_SRF_4_HR.png",
+      "git_blob_sha1": "300ef985851b18b259f9e0361de742f286d9be90",
+      "size": 262723
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_032_SRF_4_HR.png",
+      "git_blob_sha1": "0d482f39598724226bf88e1b656ddcfd8e1d0aed",
+      "size": 387110
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_033_SRF_4_HR.png",
+      "git_blob_sha1": "b327c709a8ba14ce5df244c6ae95a5d7525ca6ec",
+      "size": 328791
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_034_SRF_4_HR.png",
+      "git_blob_sha1": "7711521d4c8a33d5e77dbbaca2ac962c4cced49c",
+      "size": 251665
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_035_SRF_4_HR.png",
+      "git_blob_sha1": "ac23a5ac366134ffed25338b3269ad4fe4ef056d",
+      "size": 199303
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_036_SRF_4_HR.png",
+      "git_blob_sha1": "4eacbde501d297ab81737dda27ca996713d37463",
+      "size": 291467
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_037_SRF_4_HR.png",
+      "git_blob_sha1": "1eee8ca7ec80fc47714f1e39260961d2edbfb344",
+      "size": 261257
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_038_SRF_4_HR.png",
+      "git_blob_sha1": "bcb37501818dfeee4c6f532b3a5e0ce2ceddbcbd",
+      "size": 269054
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_039_SRF_4_HR.png",
+      "git_blob_sha1": "84d00ecd9eb6e09ccfd000bd589e0a8de13c17d5",
+      "size": 288638
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_040_SRF_4_HR.png",
+      "git_blob_sha1": "7216c10301a7fd7749ced3f13e73f219df3c3a75",
+      "size": 235763
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_041_SRF_4_HR.png",
+      "git_blob_sha1": "9d092c74d4386b7ac5032aa7b148a864c4888de4",
+      "size": 258881
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_042_SRF_4_HR.png",
+      "git_blob_sha1": "d005e8cbfd9eba82524940692fe977142834c356",
+      "size": 285671
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_043_SRF_4_HR.png",
+      "git_blob_sha1": "c2eb997e86196705ecacb52350924064816437cb",
+      "size": 230825
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_044_SRF_4_HR.png",
+      "git_blob_sha1": "571a073a1be8e54fab84839f79595aab9742caf8",
+      "size": 251066
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_045_SRF_4_HR.png",
+      "git_blob_sha1": "b7dbb3382835f21a8eeedd8867fe4ffeb7b64271",
+      "size": 290197
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_046_SRF_4_HR.png",
+      "git_blob_sha1": "37dac90b9ce6fa2b008dea9216df0cc2a6ad76ff",
+      "size": 175848
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_047_SRF_4_HR.png",
+      "git_blob_sha1": "efc8c6ecf83eee03ceb90416d3d122976f97a523",
+      "size": 337477
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_048_SRF_4_HR.png",
+      "git_blob_sha1": "09bf16922006940008a6babff0f93e285047224a",
+      "size": 326683
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_049_SRF_4_HR.png",
+      "git_blob_sha1": "700348c90668e964d2ec36b66a5d9dd822638a49",
+      "size": 250221
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_050_SRF_4_HR.png",
+      "git_blob_sha1": "41fe9dc0a7b3c2223a7d0dc5c456d8c6e567c062",
+      "size": 207384
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_051_SRF_4_HR.png",
+      "git_blob_sha1": "e03e721b0f6351ff0410f069244c91dbeb334685",
+      "size": 304954
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_052_SRF_4_HR.png",
+      "git_blob_sha1": "3a26f32fa8cfb3269d707e1b9a06e1c1e098fec7",
+      "size": 288958
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_053_SRF_4_HR.png",
+      "git_blob_sha1": "dd15f7238e78e24f75750fe2bd665bd957b36f66",
+      "size": 207362
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_054_SRF_4_HR.png",
+      "git_blob_sha1": "5d95fd926e559805e9bd81d34d298de68fbb944d",
+      "size": 223049
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_055_SRF_4_HR.png",
+      "git_blob_sha1": "6fd7c4425bd60ecf1f5e213a2420dc7c6811c0fe",
+      "size": 276363
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_056_SRF_4_HR.png",
+      "git_blob_sha1": "acbf5f8f85bb92b9aff7bf259f278dc8ed4bcd73",
+      "size": 314951
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_057_SRF_4_HR.png",
+      "git_blob_sha1": "a83a92c9614640dc9e709c0a66406ff2f593d7d2",
+      "size": 382917
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_058_SRF_4_HR.png",
+      "git_blob_sha1": "6a6a49f0c5a2b58cf506a3cb53a77583515f0cf8",
+      "size": 259017
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_059_SRF_4_HR.png",
+      "git_blob_sha1": "030dcb111d0083c391d98191ac37893c0684b00f",
+      "size": 236134
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_060_SRF_4_HR.png",
+      "git_blob_sha1": "ec87502bc439529c54b6672514b65d61c10b4ae8",
+      "size": 239302
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_061_SRF_4_HR.png",
+      "git_blob_sha1": "0773397c4cfdffd2baf0bdb4401728309667fb61",
+      "size": 224469
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_062_SRF_4_HR.png",
+      "git_blob_sha1": "9949575e7cc3a9f0096355ade49f5b6be902d070",
+      "size": 225382
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_063_SRF_4_HR.png",
+      "git_blob_sha1": "e3f8cd2b7c9d7e9999336488d0cd3bf292590054",
+      "size": 181857
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_064_SRF_4_HR.png",
+      "git_blob_sha1": "cac063b4f089bcc8a1a84a0e17b35d70b34435d2",
+      "size": 324938
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_065_SRF_4_HR.png",
+      "git_blob_sha1": "fbdb9d115140105b2b45fea2cbe5b6d3913844fa",
+      "size": 323906
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_066_SRF_4_HR.png",
+      "git_blob_sha1": "0a9e31a25e6b9dd0209d715198bbc61950208edc",
+      "size": 274501
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_067_SRF_4_HR.png",
+      "git_blob_sha1": "03ff9ab76713bb65924dfdf174e2e97391d233ca",
+      "size": 126949
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_068_SRF_4_HR.png",
+      "git_blob_sha1": "500ff3aa54191fda5995cab18804e9f1e42cc3e1",
+      "size": 371294
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_069_SRF_4_HR.png",
+      "git_blob_sha1": "b54241ad7322d5131e797a9938de4a314eab1cf6",
+      "size": 290187
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_070_SRF_4_HR.png",
+      "git_blob_sha1": "7166a9b55865459afa1547cabc8d86771f686923",
+      "size": 250998
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_071_SRF_4_HR.png",
+      "git_blob_sha1": "a194534539d8074a2736d2ea71e183eb1f4ea892",
+      "size": 238207
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_072_SRF_4_HR.png",
+      "git_blob_sha1": "a4e39d5f0157bbb6e21079efb36a3787277e0230",
+      "size": 327618
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_073_SRF_4_HR.png",
+      "git_blob_sha1": "341d18d9c8872a6b1a104783f3340b7eaf50facc",
+      "size": 317011
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_074_SRF_4_HR.png",
+      "git_blob_sha1": "0e4e7fe936e6424d56b58a1ae77133e595c8ed9e",
+      "size": 288570
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_075_SRF_4_HR.png",
+      "git_blob_sha1": "c29ac97fba730351a971df8bc485e6d9d22d9627",
+      "size": 289508
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_076_SRF_4_HR.png",
+      "git_blob_sha1": "865e0251606deabdf84622402fb90c9a6d9199af",
+      "size": 233318
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_077_SRF_4_HR.png",
+      "git_blob_sha1": "91e6b1792e2e7d669c6c5c5e7c2c2ed7dfb17372",
+      "size": 343498
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_078_SRF_4_HR.png",
+      "git_blob_sha1": "977662812dea4143bee47a83c884b531b36b06f0",
+      "size": 226624
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_079_SRF_4_HR.png",
+      "git_blob_sha1": "f00ef7552644071dd4d5abba072e0f772eb5ebdd",
+      "size": 164490
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_080_SRF_4_HR.png",
+      "git_blob_sha1": "2b6405188b1255e6baa5a0ddae69fd6ece1f22f8",
+      "size": 215875
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_081_SRF_4_HR.png",
+      "git_blob_sha1": "ec0a61c928cfc7debf2b7f163b274ea60128659d",
+      "size": 157272
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_082_SRF_4_HR.png",
+      "git_blob_sha1": "de82b86fd910a06cd6c0c46beb6af6757ba1a423",
+      "size": 266071
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_083_SRF_4_HR.png",
+      "git_blob_sha1": "1bf4cf976ceb106703bc7462fdc1b94b9e5b8902",
+      "size": 359205
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_084_SRF_4_HR.png",
+      "git_blob_sha1": "a972dd7492be71e71ee723fc102e2fd551cde797",
+      "size": 318639
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_085_SRF_4_HR.png",
+      "git_blob_sha1": "fe6b952467fe979db1314b023193fb8327be5215",
+      "size": 252027
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_086_SRF_4_HR.png",
+      "git_blob_sha1": "6ab189895eaac5ba0f0d6d4421103be3d095eb21",
+      "size": 326836
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_087_SRF_4_HR.png",
+      "git_blob_sha1": "fb4b97d5ca7fb4c64f1f10385646d780df77114e",
+      "size": 276022
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_088_SRF_4_HR.png",
+      "git_blob_sha1": "65bc73b9c4c00c47fdbd031a1243f90ca63451c4",
+      "size": 254666
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_089_SRF_4_HR.png",
+      "git_blob_sha1": "93d12786d88ee12ee9393d2db34525609d778fab",
+      "size": 327214
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_090_SRF_4_HR.png",
+      "git_blob_sha1": "cb5f18ba35aab1251ad4e358e5edac91b3306fba",
+      "size": 305349
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_091_SRF_4_HR.png",
+      "git_blob_sha1": "f0b20f799f3ae290ca59bc2acbde23511c1a86c8",
+      "size": 275899
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_092_SRF_4_HR.png",
+      "git_blob_sha1": "c24e26b7fd88ef7fe8bc65ce44ed50a2f82c6df2",
+      "size": 233880
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_093_SRF_4_HR.png",
+      "git_blob_sha1": "344e5b29f82737dfe1bcd2d9b41f820ca4a378ee",
+      "size": 235230
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_094_SRF_4_HR.png",
+      "git_blob_sha1": "717eacfc3afc3fe5b9350e4c7f545f2644453c5f",
+      "size": 301223
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_095_SRF_4_HR.png",
+      "git_blob_sha1": "8da5ce191bdf32396e7c79067d594fda7f430155",
+      "size": 266241
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_096_SRF_4_HR.png",
+      "git_blob_sha1": "c55d34b5939d789a9c861987f4d58c967f7d4900",
+      "size": 365276
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_097_SRF_4_HR.png",
+      "git_blob_sha1": "84b0efd71e12e55b4c52c177ae88a5b52fa98fa6",
+      "size": 326218
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_098_SRF_4_HR.png",
+      "git_blob_sha1": "cc46e50b466c97e6f3457b2d18423b8f290bbaec",
+      "size": 288693
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_099_SRF_4_HR.png",
+      "git_blob_sha1": "650d20495a60b8d3aa359b2fba1cc7a4e732fe4f",
+      "size": 291784
+    },
+    {
+      "path": "data/BSD100/image_SRF_4/img_100_SRF_4_HR.png",
+      "git_blob_sha1": "ccb4c01abb5f7c6a3ab3ccd314dda761a81752f5",
+      "size": 296068
+    }
+  ]
+}

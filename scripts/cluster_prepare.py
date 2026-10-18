@@ -1,4 +1,4 @@
-"""Prepare full DIV2K train images for online random128 and center128 eval.
+"""Prepare full DIV2K train images and reproducible evaluation crop banks.
 
 The explicit legacy mode preserves preparation of the original patch banks.
 """
@@ -7,9 +7,13 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 import zipfile
 import numpy as np
 from PIL import Image
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'src'))
+from mgm_i2i.cluster.crop_sampling import random_crop_coordinates
 
 SOURCES = {
     'train': 'https://data.vision.ee.ethz.ch/cvl/DIV2K/DIV2K_train_HR.zip',
@@ -38,9 +42,15 @@ def download(url, path):
 def prepare(args):
     root = args.data_root.resolve()
     protocols = {'random': 'random128-v3', 'center': 'center128-v2',
+                 'multicrop': 'random128-multicrop-v4',
                  'legacy': 'DIV2K HR average-pool synthetic SR; image-level split v1'}
     config = dict(bank_size=args.bank_size, patches_per_image=args.patches_per_image,
                   seed=args.seed, protocol=protocols[args.crop_mode])
+    eval_crops = getattr(args, 'eval_crops_per_image', 5) if args.crop_mode == 'multicrop' else 1
+    if eval_crops < 1:
+        raise ValueError('Evaluation crop count must be positive')
+    if args.crop_mode == 'multicrop':
+        config.update(eval_crops_per_image=eval_crops, eval_crop_policy='fixed_random_without_replacement')
     if args.crop_mode != 'legacy' and (args.bank_size != 128 or args.patches_per_image != 1):
         raise ValueError('Random/central protocols require bank-size=128 and patches-per-image=1')
     root.mkdir(parents=True, exist_ok=True)
@@ -77,7 +87,7 @@ def prepare(args):
                     'test': ('valid', [names['valid'][i] for i in sorted(order[50:])])}
         banks, train_images = {}, []
         for split, (origin, members) in selected.items():
-            if split == 'train' and args.crop_mode == 'random':
+            if split == 'train' and args.crop_mode in ('random', 'multicrop'):
                 (root/'train_images').mkdir(exist_ok=True)
                 with zipfile.ZipFile(archives[origin]['path']) as z:
                     for i, member in enumerate(members):
@@ -97,6 +107,8 @@ def prepare(args):
                             print(split, i+1, '/', len(members), flush=True)
                 continue
             n_crops = 1 if args.crop_mode != 'legacy' else (args.patches_per_image if split == 'train' else 5)
+            if args.crop_mode == 'multicrop':
+                n_crops = eval_crops
             target = root/f'{split}.npy'
             temp = root/f'{split}.partial.npy'
             out = np.lib.format.open_memmap(temp, mode='w+', dtype='uint8',
@@ -111,7 +123,10 @@ def prepare(args):
                         if min(w, h) < p:
                             raise ValueError(f'{member} smaller than bank size {p}')
                         rng = np.random.default_rng(np.random.SeedSequence([args.seed, int(Path(member).stem)]))
-                        if args.crop_mode != 'legacy':
+                        if args.crop_mode == 'multicrop':
+                            coords = random_crop_coordinates(h, w, p, n_crops,
+                                                             [args.seed, int(Path(member).stem), 102])
+                        elif args.crop_mode != 'legacy':
                             coords = [((h-p)//2, (w-p)//2)]
                         elif split == 'train':
                             coords = [(int(rng.integers(h-p+1)), int(rng.integers(w-p+1))) for _ in range(n_crops)]
@@ -119,7 +134,10 @@ def prepare(args):
                             coords = [(0, 0), (0, w-p), (h-p, 0), (h-p, w-p), ((h-p)//2, (w-p)//2)]
                         for j, (top, left) in enumerate(coords):
                             out[i*n_crops+j] = np.asarray(image.crop((left, top, left+p, top+p)))
-                            rows.append(dict(image=Path(member).name, top=top, left=left))
+                            row = dict(image=Path(member).name, top=top, left=left)
+                            if args.crop_mode == 'multicrop':
+                                row['crop_index'] = j
+                            rows.append(row)
                     if (i+1) % 50 == 0:
                         print(split, i+1, '/', len(members), flush=True)
             out.flush()
@@ -127,7 +145,7 @@ def prepare(args):
             temp.replace(target)
             banks[target.name] = dict(sha256=digest(target), images=members, crops=rows)
         manifest = dict(preparation=config, sources=archives, banks=banks)
-        if args.crop_mode == 'random':
+        if args.crop_mode in ('random', 'multicrop'):
             manifest['train_images'] = train_images
         manifest_path.write_text(json.dumps(manifest, indent=2))
     weights = args.weights_root.resolve()/'hub/checkpoints/alexnet-owt-7be5be79.pth'
@@ -147,7 +165,9 @@ if __name__ == '__main__':
     p.add_argument('--data-root', type=Path, default=None)
     p.add_argument('--weights-root', type=Path, default=Path('weights'))
     p.add_argument('--archive-root', type=Path, help='Reuse existing official ZIPs without copying or redownloading')
-    p.add_argument('--crop-mode', choices=['random', 'center', 'legacy'], default='random')
+    p.add_argument('--crop-mode', choices=['multicrop', 'random', 'center', 'legacy'], default='multicrop')
+    p.add_argument('--eval-crops-per-image', type=int, default=5,
+                   help='Multicrop mode: fixed random validation/test crops per photograph')
     p.add_argument('--bank-size', type=int, default=None)
     p.add_argument('--patches-per-image', type=int, default=None)
     p.add_argument('--seed', type=int, default=123)
@@ -155,6 +175,7 @@ if __name__ == '__main__':
     args = p.parse_args()
     if args.data_root is None:
         args.data_root = Path({'random': 'data/div2k_random128', 'center': 'data/div2k_center128',
+                               'multicrop': 'data/div2k_multicrop128',
                                'legacy': 'data/div2k'}[args.crop_mode])
     if args.bank_size is None:
         args.bank_size = 256 if args.crop_mode == 'legacy' else 128

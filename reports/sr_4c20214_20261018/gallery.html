@@ -1,0 +1,27 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>SR comparison 4c20214</title>
+<style>body{font-family:system-ui,sans-serif;max-width:1800px;margin:auto;padding:24px;color:#17212b}img{max-width:100%;height:auto}section{margin:40px 0}table{border-collapse:collapse}td,th{border:1px solid #ccd5df;padding:8px}p{max-width:1050px}</style>
+<h1>SR ×4: обучение, метрики, визуальные сравнения</h1>
+<p>18 октября 2026. Все изображения составлены из исходных сохранённых PNG; нового inference не было. Native outputs, seed0, одинаковые первые8 validation фото. Final projection показана в таблицах, но не в этих PNG. <a href="REPORT.md">Полный Markdown-отчёт</a>.</p>
+<h2>Метрики</h2><table><tr><th>Метод</th><th>PSNR</th><th>LPIPS</th><th>Projected LPIPS</th><th>мс/изображение</th></tr>
+<tr><td>MSE</td><td>27.952 ± 0.013</td><td>0.2885 ± 0.0009</td><td>0.2885 ± 0.0009</td><td>9.00 ± 0.03</td></tr>
+<tr><td>MSE + perceptual</td><td>27.670 ± 0.021</td><td>0.1976 ± 0.0004</td><td>0.1976 ± 0.0004</td><td>9.03 ± 0.14</td></tr>
+<tr><td>ESRGAN</td><td>25.524 ± 0.023</td><td>0.1532 ± 0.0034</td><td>0.1491 ± 0.0022</td><td>34.99 ± 0.79</td></tr>
+<tr><td>MGM</td><td>23.419 ± 0.094</td><td>0.3141 ± 0.0155</td><td>0.3141 ± 0.0155</td><td>9.12 ± 0.03</td></tr>
+<tr><td>I²SB NFE1</td><td>27.683 ± 0.036</td><td>0.3097 ± 0.0042</td><td>0.3044 ± 0.0039</td><td>9.99 ± 0.13</td></tr>
+<tr><td>I²SB NFE4</td><td>26.309 ± 0.019</td><td>0.3204 ± 0.0024</td><td>0.2394 ± 0.0025</td><td>37.46 ± 0.13</td></tr>
+<tr><td>I²SB NFE16</td><td>25.393 ± 0.013</td><td>0.2759 ± 0.0017</td><td>0.2034 ± 0.0018</td><td>147.67 ± 0.44</td></tr>
+<tr><td>I²SB NFE64</td><td>24.837 ± 0.014</td><td>0.2517 ± 0.0015</td><td>0.1938 ± 0.0014</td><td>585.09 ± 1.41</td></tr>
+</table>
+<section><h2>Loss curves</h2><img src="training_objectives.png"></section>
+<section><h2>MGM outliers</h2><img src="mgm_instability.png"></section>
+<section><h2>Quality–latency</h2><img src="quality_latency.png"></section>
+<section><h2>I2SB NFE</h2><img src="i2sb_nfe.png"></section>
+<section><h2>0801.png</h2><a href="sample_0801.png"><img src="sample_0801.png"></a></section>
+<section><h2>0802.png</h2><a href="sample_0802.png"><img src="sample_0802.png"></a></section>
+<section><h2>0803.png</h2><a href="sample_0803.png"><img src="sample_0803.png"></a></section>
+<section><h2>0804.png</h2><a href="sample_0804.png"><img src="sample_0804.png"></a></section>
+<section><h2>0808.png</h2><a href="sample_0808.png"><img src="sample_0808.png"></a></section>
+<section><h2>0810.png</h2><a href="sample_0810.png"><img src="sample_0810.png"></a></section>
+<section><h2>0811.png</h2><a href="sample_0811.png"><img src="sample_0811.png"></a></section>
+<section><h2>0812.png</h2><a href="sample_0812.png"><img src="sample_0812.png"></a></section>
+<section><h2>Один input, разные training seeds</h2><img src="across_seeds.png"></section></html>

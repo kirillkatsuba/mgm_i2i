@@ -63,6 +63,7 @@ def vgg19_feature_inventory():
 def inventory(width=DEFAULT_WIDTH):
     with torch.device('meta'):
         generator = count(Generator(width=width, architecture_version=2))
+        field_v1 = count(Field(width=width, architecture_version=1))
         field = count(Field(width=width, architecture_version=2))
         # I2SB-small: bridge state has 3 channels; time embedding is separate.
         bridge = count(BridgeDenoiser(width))
@@ -74,6 +75,7 @@ def inventory(width=DEFAULT_WIDTH):
         'counting': 'Parameters only; excludes buffers, EMA copies, optimizer states and evaluation networks.',
         'mse': {'inference': generator, 'trainable': generator},
         'mse_vgg': {'inference': generator, 'trainable': generator, 'frozen_loss_features': vgg},
+        'mgm_v1': {'inference': generator, 'field': field_v1, 'trainable': generator + field_v1},
         'mgm_v2': {'inference': generator, 'field': field, 'trainable': generator + field},
         'esrgan_rrdb23': {'inference': esrgan, 'discriminator': discriminator,
                           'trainable': esrgan + discriminator, 'frozen_loss_features': vgg},

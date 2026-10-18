@@ -1,5 +1,7 @@
 """CPU regression checks for cluster models, planning, and training helpers."""
 import importlib.util
+import hashlib
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -174,6 +176,74 @@ def test_plan_budget_and_common_initialization(tmp_path):
     assert any('afterany:' in word for word in cmds[3])
 
 
+def test_critic_only_noise_changes_generator_observation_but_keeps_field_noise(monkeypatch):
+    from mgm_i2i.cluster import engine
+
+    fake = torch.ones(1, 3, 4, 4, requires_grad=True)
+    real = -torch.ones_like(fake)
+    t = torch.full((1, 1, 1, 1), .25)
+    monkeypatch.setattr(engine, 'random_bridge', lambda *args, **kwargs:
+                        (t, torch.zeros_like(t, dtype=torch.bool), torch.ones_like(fake)))
+    observations = []
+
+    def field(c, time, mix):
+        observations.append(mix.detach().clone())
+        return .1 * mix
+
+    cfg = dict(midpoint=False, noise_g=0., noise_f=.01, antithetic=False, amp=False)
+    field_loss = engine.mgm_objective(field, None, fake.detach(), real, cfg, False)
+    generator_loss = engine.mgm_objective(field, None, fake, real, cfg, True)
+    clean = .75 * fake.detach() + .25 * real
+    torch.testing.assert_close(observations[0], clean + (.01 * .25 * .75)**.5)
+    torch.testing.assert_close(observations[1], clean)
+    generator_loss.backward()
+    assert torch.isfinite(field_loss)
+    assert torch.isfinite(fake.grad).all() and fake.grad.abs().sum() > 0
+
+
+def test_reuse_warmup_plan_preserves_initialization_and_isolates_noise(tmp_path):
+    spec = importlib.util.spec_from_file_location('cluster_submit', ROOT/'scripts/cluster_submit.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    args = SimpleNamespace(data_root=tmp_path/'data', weights_root=tmp_path/'weights',
+                           run_root=tmp_path/'source', width=120, batch_size=16, cpus=4, fp32=False,
+                           partition='rocky', max_parallel=3, constraint='', account='',
+                           seeds=[0, 1, 2], variants=['mgm'], warmup_minutes=120., train_minutes=120.)
+    source = module.make_plan(args)
+    args.run_root.mkdir()
+    raw = json.dumps(source).encode()
+    (args.run_root/'plan.json').write_bytes(raw)
+    signature = args.run_root/'plan.sha256'
+    signature.write_text(hashlib.sha256(raw).hexdigest())
+    args.reuse_warmup_from, args.run_root = args.run_root, tmp_path/'critic'
+    args.variants = ['mgm_critic_noise']
+    plan = module.make_plan(args)
+    assert len(plan['warmup']) == 0
+    assert len(plan['train']) == len(plan['eval']) == len(plan['reused_warmup']) == 3
+    assert plan['budget']['training_gpu_hours'] == 6.
+    assert plan['budget']['reused_warmup_training_gpu_hours'] == 6.
+    for reference, candidate in zip(source['train'], plan['train']):
+        assert reference['init'] == candidate['init']
+        assert candidate['config']['architecture_version'] == 2
+        assert candidate['config']['noise_f'] == .01 and candidate['config']['noise_g'] == 0.
+        differences = {key for key in reference['config']
+                       if reference['config'][key] != candidate['config'][key]}
+        assert differences == {'variant', 'noise_g'}
+    commands = module.commands(plan, args.run_root/'plan.json')
+    assert len(commands) == 3
+    assert '--job-name=mgm_train' in commands[0]
+    assert not any('--dependency=' in word for word in commands[0])
+    assert '--dependency=afterok:<train_job_id>' in commands[1]
+    assert '--dependency=afterany:<eval_job_id>' in commands[2]
+    args.width = 48
+    with pytest.raises(ValueError, match='Source warmup config differs: width'):
+        module.make_plan(args)
+    args.width = 120
+    signature.write_text('bad signature')
+    with pytest.raises(ValueError, match='checksum mismatch'):
+        module.make_plan(args)
+
+
 def test_progress_resumes_clock_and_writes_log_lines():
     from io import StringIO
     from mgm_i2i.cluster.progress import BudgetProgress
@@ -238,7 +308,7 @@ def test_central_protocol_rejects_old_manifest_but_legacy_runs_still_load(tmp_pa
         validate_data_protocol(tmp_path, dict(cfg, eval_crop=256))
 
 
-@pytest.mark.parametrize('crop_mode', ['center', 'random'])
+@pytest.mark.parametrize('crop_mode', ['center', 'random', 'multicrop'])
 def test_preparation_extracts_original_centers_and_image_level_split(tmp_path, monkeypatch, crop_mode):
     import io
     import json
@@ -274,7 +344,7 @@ def test_preparation_extracts_original_centers_and_image_level_split(tmp_path, m
     manifest = json.loads((args.data_root/'manifest.json').read_text())
     sets = []
     for split, count in [('train', 800), ('val', 50), ('test', 50)]:
-        if split == 'train' and crop_mode == 'random':
+        if split == 'train' and crop_mode in ('random', 'multicrop'):
             entries = manifest['train_images']
             assert len(entries) == 800
             assert not (args.data_root/'train.npy').exists()
@@ -284,22 +354,66 @@ def test_preparation_extracts_original_centers_and_image_level_split(tmp_path, m
             sets.append({entry['image'] for entry in entries})
             continue
         bank = np.load(args.data_root/f'{split}.npy', mmap_mode='r')
-        assert bank.shape == (count, 128, 128, 3)
-        np.testing.assert_array_equal(bank[0], pixels[3:131, 7:135])
         rows = manifest['banks'][f'{split}.npy']['crops']
-        assert len(rows) == count
-        assert all(row['top'] == 3 and row['left'] == 7 for row in rows)
+        if crop_mode == 'multicrop':
+            assert bank.shape == (count * 5, 128, 128, 3) and len(rows) == count * 5
+            for image_id in {row['image'] for row in rows}:
+                members = [r for r in rows if r['image'] == image_id]
+                assert len({(r['top'], r['left']) for r in members}) == 5
+                assert {r['crop_index'] for r in members} == set(range(5))
+            for patch, row in zip(bank, rows):
+                top, left = row['top'], row['left']
+                np.testing.assert_array_equal(patch, pixels[top:top+128, left:left+128])
+        else:
+            assert bank.shape == (count, 128, 128, 3)
+            np.testing.assert_array_equal(bank[0], pixels[3:131, 7:135])
+            assert len(rows) == count
+            assert all(row['top'] == 3 and row['left'] == 7 for row in rows)
         ids = {row['image'] for row in rows}
         assert len(ids) == count
         sets.append(ids)
     assert sets[0].isdisjoint(sets[1] | sets[2]) and sets[1].isdisjoint(sets[2])
     # Reusing the exact prepared dataset is idempotent and verifies hashes.
     module.prepare(args)
+    if crop_mode == 'multicrop':
+        from mgm_i2i.cluster.data import load_multicrop_evaluation
+        from mgm_i2i.cluster.metrics import evaluation_bank
+        manifest_hash = original_digest(args.data_root/'manifest.json')
+        _, actual_hash = load_multicrop_evaluation(args.data_root, 'val', manifest_hash)
+        assert actual_hash == manifest_hash
+        with pytest.raises(ValueError, match='manifest changed'):
+            load_multicrop_evaluation(args.data_root, 'test', 'wrong hash')
+        # Frozen legacy models can use the same new evaluation bank without
+        # modifying checkpoint config, training data hash or original data root.
+        old_cfg = dict(data_root=str(tmp_path/'absent_old_data'), eval_crop=256)
+        dataset, rows, _, dataset_name, size = evaluation_bank(old_cfg, 'old-training-hash', 'val',
+                                                               args.data_root, manifest_hash)
+        assert len(dataset) == len(rows) == 250 and dataset_name == 'DIV2K' and size == 128
+        submit_spec = importlib.util.spec_from_file_location('multicrop_submit', ROOT/'scripts/cluster_submit.py')
+        submit = importlib.util.module_from_spec(submit_spec)
+        submit_spec.loader.exec_module(submit)
+        source_args = SimpleNamespace(data_root=tmp_path/'old-data', weights_root=weights,
+            run_root=tmp_path/'old-models', width=120, batch_size=16, cpus=4, fp32=False,
+            partition='rocky', max_parallel=1, constraint='', account='', seeds=[0], variants=['mgm'],
+            warmup_minutes=120, train_minutes=120)
+        source_plan = submit.make_plan(source_args)
+        submit.execute_plan(source_plan, source_args.run_root)
+        eval_spec = importlib.util.spec_from_file_location('multicrop_eval_submit', ROOT/'scripts/cluster_eval_submit.py')
+        evaluate = importlib.util.module_from_spec(eval_spec)
+        eval_spec.loader.exec_module(evaluate)
+        plan = evaluate.make_plan(SimpleNamespace(data_root=args.data_root, split='val',
+            source_runs=[source_args.run_root], run_root=tmp_path/'shared-eval', partition='rocky',
+            max_parallel=1, constraint='', account='', gpu_type='', memory_gb=32, eval_minutes=60))
+        assert plan['evaluation_split'] == 'val' and plan['evaluation_dataset'] == 'DIV2K'
+        assert len(plan['eval']) == 1 and not plan['train']
+        assert plan['eval'][0]['evaluation_data_hash'] == manifest_hash
+        assert plan['eval'][0]['config']['data_protocol'] == 'random128-v3'
     with pytest.raises(SystemExit, match='fresh --data-root'):
         module.prepare(SimpleNamespace(**dict(vars(args), seed=124)))
-    if crop_mode == 'random':
+    if crop_mode in ('random', 'multicrop'):
         from mgm_i2i.cluster.data import training_dataset, RandomImageCrops, validate_data_protocol
-        cfg = dict(data_protocol='random128-v3', crop=128, eval_crop=128, seed=9)
+        cfg = dict(data_protocol='random128-multicrop-v4' if crop_mode == 'multicrop' else 'random128-v3',
+                   crop=128, eval_crop=128, seed=9)
         validate_data_protocol(args.data_root, cfg)
         assert isinstance(training_dataset(args.data_root, cfg), RandomImageCrops)
         submit_spec = importlib.util.spec_from_file_location('submit_check', ROOT/'scripts/cluster_submit.py')
