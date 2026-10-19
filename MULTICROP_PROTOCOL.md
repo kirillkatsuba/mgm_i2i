@@ -1,5 +1,7 @@
 # DIV2K: несколько случайных crop128 для train и оценки
 
+Запуск MSE, MSE+perceptual, ESRGAN и I²SB на этом протоколе: [BASELINES_MULTICROP.md](BASELINES_MULTICROP.md), launcher `bash slurm/launch_baselines.sh --submit`.
+
 Согласовано 19 октября 2026. Новый протокол — **random128-multicrop-v4**. Размер моделей120/240/480, pooling×4 и image-level split800/50/50 сохраняются. Код и CPU-проверки подготовлены локально; реальные новые данные, GPU training/inference и Slurm submission здесь не запускались.
 
 ## Данные
