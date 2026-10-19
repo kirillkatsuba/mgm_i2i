@@ -273,21 +273,21 @@ def commands(plan, plan_path):
     jobs = []
     gpu = scheduler.get('gpu_type', '')
     previous = None
-    for phase in ('warmup', 'field_warmup', 'train', 'eval'):
+    for phase in plan.get('phase_order', ('warmup', 'field_warmup', 'train', 'eval')):
         if not plan.get(phase):
             continue
         limit = budget[phase+'_limit_minutes']
         cmd = common + ['--gpus='+((gpu+':') if gpu else '')+'1',
                         '--cpus-per-task='+str(plan[phase][0]['config']['cpus']),
-                        '--time='+str(limit), '--job-name=mgm_'+phase,
+                        '--time='+str(limit), '--job-name='+scheduler.get('job_name_prefix', 'mgm')+'_'+phase,
                         '--output='+str(logs/(phase+'-%A_%a.out')),
                         f'--array=0-{len(plan[phase])-1}%{scheduler["max_parallel"]}']
         if previous:
             cmd += [f'--dependency=afterok:<{previous}_job_id>', '--kill-on-invalid-dep=yes']
-        cmd += [str(root/'slurm/cluster.sbatch'), str(plan_path), phase]
+        cmd += [str(root/plan.get('worker_script', 'slurm/cluster.sbatch')), str(plan_path), phase]
         jobs.append(cmd)
         previous = phase
-    jobs.append(common + ['--cpus-per-task=1', '--time=5', '--job-name=mgm_collect',
+    jobs.append(common + ['--cpus-per-task=1', '--time=5', '--job-name='+scheduler.get('job_name_prefix', 'mgm')+'_collect',
                           '--output='+str(logs/'collect-%j.out'),
                           f'--dependency=afterany:<{previous}_job_id>',
                           str(root/'slurm/collect.sbatch'), str(plan_path)])
@@ -409,7 +409,7 @@ def execute_plan(plan, run_root, submit=False, verify=None):
     record = dict(plan=str(plan_path), jobs={})
     with submission.open('x') as stream:
         stream.write(json.dumps(record, indent=2))
-    phases = [phase for phase in ('warmup', 'field_warmup', 'train', 'eval') if plan.get(phase)] + ['collect']
+    phases = [phase for phase in plan.get('phase_order', ('warmup', 'field_warmup', 'train', 'eval')) if plan.get(phase)] + ['collect']
     for phase, cmd in zip(phases, jobs):
         for dependency, job_id in record['jobs'].items():
             cmd = [arg.replace(f'<{dependency}_job_id>', job_id) for arg in cmd]

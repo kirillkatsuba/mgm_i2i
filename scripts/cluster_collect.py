@@ -49,8 +49,11 @@ def collect(plan_path, split=None):
     columns = ['model_psnr', 'model_ssim', 'model_lpips', 'diversity_lpips', 'model_lr_mse_raw', 'steps']
     if results and all('model_projected_lpips' in row for row in results):
         columns += ['model_projected_psnr', 'model_projected_lpips', 'inference_ms_per_image']
+    coverage_note = ('One official externally pretrained checkpoint; no independent training-seed SD. '
+                     'Training steps and GPU cost are unknown, not zero.' if plan.get('external_pretrained') else
+                     'Mean ± sample SD across seeds; n=1 has no SD.')
     report = [f'# {plan.get("evaluation_dataset", "DIV2K")} x4 — {split}', '',
-              f'Completed evaluations: {len(results)}/{len(items)}. Mean ± sample SD across seeds; n=1 has no SD.',
+              f'Completed evaluations: {len(results)}/{len(items)}. '+coverage_note,
               'Crops are averaged within each source image before calculating run means.', '',
               '| Variant | Seeds | '+ ' | '.join(columns)+' |',
               '|---|---|'+ '|'.join(['---']*len(columns))+'|']
@@ -79,7 +82,11 @@ def collect(plan_path, split=None):
         report += ['', 'Inference timings use different GPU models or batch sizes and must not be directly ranked.']
     if len({r['data_hash'] for r in results}) > 1:
         report += ['', 'Training datasets/protocols differ; common evaluation does not isolate architecture or objective effects.']
-    report += ['', 'Training, warmup and evaluation times are in the per-run CSV. MSE warmup is shared by U-Net methods; ESRGAN has its own RRDB L1 warmup. I2SB trains from scratch.',
+    training_note = ('Official I2SB uses ImageNet256/ADM pretraining and the original 552.81M-parameter network. '
+                     'Evaluation is on the shared DIV2K crop128 bank without resize; this is not a full ImageNet256 reproduction.'
+                     if plan.get('external_pretrained') else
+                     'Training, warmup and evaluation times are in the per-run CSV. MSE warmup is shared by U-Net methods; ESRGAN has its own RRDB L1 warmup. I2SB trains from scratch.')
+    report += ['', training_note,
                'Training stop policy, sampled patches and epoch counts are in the per-run CSV. Equal sampled patches and equal GPU time are different comparisons. Compare convergence curves as well as final scores.',
                'Larger diversity is not automatically better; inspect quality and LR consistency together.',
                'This is synthetic average-pooling SR, not the standard full-frame bicubic benchmark.', '']

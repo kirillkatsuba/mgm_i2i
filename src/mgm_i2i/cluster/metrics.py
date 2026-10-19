@@ -34,7 +34,7 @@ def aggregate_images(rows, keys):
 
 
 def predict_sr(model, c, z, cfg, *, bridge=None, nfe=1, offset=0, draw=0):
-    if cfg['method'] != 'i2sb':
+    if cfg['method'] not in ('i2sb', 'i2sb_official'):
         return sr_forward(model, c, z, cfg)
     # A separate RNG for each source image makes draws independent of batch size.
     generators = [torch.Generator(device=c.device).manual_seed(20260101 + (offset+i)*2 + draw)
@@ -88,7 +88,13 @@ def _evaluate(checkpoint, output, split, batch_size, nfe=1, *,
               evaluation_data_root=None, evaluation_data_hash=None, expected_config=None):
     started = time.monotonic()
     checkpoint, output = Path(checkpoint), Path(output)
-    state = torch.load(checkpoint, map_location='cpu', weights_only=False)
+    official = expected_config is not None and expected_config.get('method') == 'i2sb_official'
+    official_metadata = {}
+    if official:
+        from .official_i2sb import load_for_evaluation
+        state, gen, bridge, official_metadata = load_for_evaluation(expected_config, checkpoint)
+    else:
+        state = torch.load(checkpoint, map_location='cpu', weights_only=False)
     if not state['complete'] or state['config'].get('field_only', False):
         raise ValueError('Evaluate a completed run, or resume training first')
     cfg = state['config']
@@ -106,11 +112,12 @@ def _evaluate(checkpoint, output, split, batch_size, nfe=1, *,
     torch.hub.set_dir(str(weights/'hub'))
     import lpips
     metric = lpips.LPIPS(net='alex', version='0.1', verbose=False).cuda().eval()
-    gen = build_generator(cfg).cuda().eval()
-    gen.load_state_dict(state['ema'])
-    bridge = (I2SBBridge(cfg['i2sb_intervals'], cfg['i2sb_beta_max']).cuda()
-              if cfg['method'] == 'i2sb' else None)
-    if cfg['method'] != 'i2sb' and nfe != 1:
+    if not official:
+        gen = build_generator(cfg).cuda().eval()
+        gen.load_state_dict(state['ema'])
+        bridge = (I2SBBridge(cfg['i2sb_intervals'], cfg['i2sb_beta_max']).cuda()
+                  if cfg['method'] == 'i2sb' else None)
+    if cfg['method'] not in ('i2sb', 'i2sb_official') and nfe != 1:
         raise ValueError('Only I2SB supports NFE > 1')
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False,
                         num_workers=cfg['workers'], pin_memory=True)
@@ -173,6 +180,9 @@ def _evaluate(checkpoint, output, split, batch_size, nfe=1, *,
                     filename = f'{offset+i:03d}_{Path(metadata[offset+i]["image"]).stem}.png'
                     Image.fromarray(full_grid).save(output/'samples'/filename)
         offset += len(real)
+        if official and (offset % 25 == 0 or offset == len(dataset)):
+            print(f'Official I2SB NFE={nfe}: {offset}/{len(dataset)} crops; '
+                  f'elapsed={(time.monotonic()-started)/60:.1f} min', flush=True)
     per_image, metrics = aggregate_images(rows, values.keys())
     output.mkdir(parents=True, exist_ok=True)
     atomic_json(output/f'{split}_patches.json', rows)
@@ -200,5 +210,9 @@ def _evaluate(checkpoint, output, split, batch_size, nfe=1, *,
                   individual_grid_columns=('nearest LR / bicubic / projected bicubic / HR / draw 1 / draw 2 / projected draw 1'
                                            if individual_samples else None),
                   throughput_protocol='Full SR inference in FP32, including all I2SB NFE/noise; GPU synchronization; excludes first batch, transfer, metrics and final projection; compare only equal batch sizes')
+    if official:
+        result.update(official_metadata)
+        result.update(peak_allocated_bytes=torch.cuda.max_memory_allocated(),
+                      peak_reserved_bytes=torch.cuda.max_memory_reserved())
     atomic_json(output/f'{split}_metrics.json', result)
     return result

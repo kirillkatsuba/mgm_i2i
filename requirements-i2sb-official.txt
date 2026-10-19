@@ -1,0 +1,2 @@
+# Download utility only; inference uses the existing mgm_i2i environment.
+gdown==5.2.0

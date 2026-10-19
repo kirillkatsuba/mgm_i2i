@@ -1,6 +1,6 @@
 # Запуск бейзлайнов на текущем DIV2K multicrop-протоколе
 
-Используются текущие реализации MSE U-Net v2, MSE+VGG perceptual, ESRGAN RRDBNet и I²SB с нашим time-conditioned U-Net. I²SB здесь — адаптация bridge-подхода к нашему масштабу сети и данным, а не исходный авторский DDPM++ backbone. MGM повторно не запускается.
+Используются текущие реализации MSE U-Net v2, MSE+VGG perceptual, ESRGAN RRDBNet и I²SB с нашим time-conditioned U-Net. I²SB здесь — адаптация bridge-подхода к нашему масштабу сети и данным, а не исходный авторский ADM/guided-diffusion backbone. MGM повторно не запускается. Уточнение20 октября: прежнее название авторского I²SB backbone «DDPM++» было неточным; upstream использует [Image256Net с guided_diffusion.create_model](https://github.com/NVlabs/I2SB/blob/master/i2sb/network.py), по умолчанию с ADM initialization.
 
 Данные те же, что у завершённых MGM: `data/div2k_multicrop128`, протокол `random128-multicrop-v4`, 800/50/50 фото. Четыре новых случайных HR crop128 на фото за train-эпоху (3200 патчей), пять фиксированных validation/test-кропов на фото (250 патчей на split), LR32 = float average pooling ×4. Без resize/flips/rotations. Подготовку данных повторять не требуется, если этот root уже использовался для MGM. На submit проверяются manifest и hashes файлов. Подробности — [MULTICROP_PROTOCOL.md](MULTICROP_PROTOCOL.md).
 

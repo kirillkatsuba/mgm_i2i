@@ -1,5 +1,7 @@
 # MGM для I2I: исследование и эксперименты
 
+**Авторский I²SB,20 октября:** подготовлена отдельная оценка готового `sr4x-pool` checkpoint (оригинальная ADM552.81M, EMA) на наших validation crop128; NFE1/4/16/64, GPU probe перед полной оценкой. [Инструкция и ограничения сравнения](I2SB_OFFICIAL.md).
+
 **Текущий протокол,19 октября:** `random128-multicrop-v4`: по4 новых random crop128 на каждое train-фото за эпоху, по5 фиксированных случайных crop128 на каждое val/test-фото. Split800/50/50 и pooling×4 сохраняются. Data root `data/div2k_multicrop128`. [Подготовка, обучение и общая оценка](MULTICROP_PROTOCOL.md).
 
 **Текущий MGM-рецепт:** width120/240/480, physical/effective batch32 без накопления, Adam lr_G=lr_field=1e-5, betas=(0.8,0.999). Новые warmup обеих архитектур:50 эпох при batch16; поле50 и MGM80 эпох при batch32. Эпоха=3200 патчей; это10000/5000/8000 шагов warmup/field/MGM. GPU-проверка batch32 ещё предстоит.
