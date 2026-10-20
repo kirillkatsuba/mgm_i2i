@@ -37,12 +37,15 @@ def probe(item, output, split, eval_minutes):
         if index >= 2:
             timings.append(1000*(time.perf_counter()-start))
     estimate = max(timings)*2*len(bank)/60000
-    report = dict(complete=estimate*2+10 <= eval_minutes, reference_bundle_sha256=cfg['reference_bundle_sha256'],
+    # Loader provenance also contains bundle IDs. Measured/planned fields take
+    # precedence; passing both as dict keyword arguments raises TypeError.
+    report = dict(metadata)
+    report.update(complete=estimate*2+10 <= eval_minutes, reference_bundle_sha256=cfg['reference_bundle_sha256'],
                   evaluation_data_hash=data_hash, evaluation_crop=128, lr_crop=32,
                   batch_size=1, measured_ms=timings, estimated_two_draw_eval_minutes_without_metrics=estimate,
                   eval_allocation_limit_minutes=eval_minutes,
                   peak_allocated_bytes=torch.cuda.max_memory_allocated(),
-                  peak_reserved_bytes=torch.cuda.max_memory_reserved(), environment=provenance(), **metadata)
+                  peak_reserved_bytes=torch.cuda.max_memory_reserved(), environment=provenance())
     if not report['complete']:
         report['error'] = 'Probe suggests allocation is too short; use a fresh run root and larger --eval-minutes'
     output.mkdir(parents=True, exist_ok=True)

@@ -232,7 +232,9 @@ def test_probe_records_memory_and_blocks_insufficient_walltime(tmp_path,monkeypa
     monkeypatch.setattr(torch.Tensor,'cuda',lambda self,**kwargs:self)
     monkeypatch.setattr(engine,'seed_all',lambda seed:None)
     monkeypatch.setattr(engine,'provenance',lambda:dict(gpu='CPU test fixture'))
-    monkeypatch.setattr(official,'load_for_evaluation',lambda *a:({},None,None,{}))
+    metadata=dict(official_bundle_sha256='bundle',precision='fp32',
+                  inference_ms='must be replaced',generator_parameters=official.PARAMETERS)
+    monkeypatch.setattr(official,'load_for_evaluation',lambda *a:({},None,None,metadata))
     bank=[torch.zeros(3,128,128,dtype=torch.uint8)]*250
     monkeypatch.setattr(metrics,'evaluation_bank',lambda *a:(bank,None,'common',None,128))
     monkeypatch.setattr(metrics,'predict_sr',lambda gen,c,*a,**k:torch.nn.functional.interpolate(c,scale_factor=4))
@@ -247,3 +249,6 @@ def test_probe_records_memory_and_blocks_insufficient_walltime(tmp_path,monkeypa
             worker.probe(item,tmp_path,'val')
     result=json.loads((tmp_path/'probe.json').read_text())
     assert result['complete'] is complete and result['peak_allocated_bytes']==123
+    assert result['official_bundle_sha256']=='bundle' and result['precision']=='fp32'
+    assert result['inference_ms']=={'1':seconds_per_nfe*1000,'4':seconds_per_nfe*4000}
+    assert result['generator_parameters']==official.PARAMETERS

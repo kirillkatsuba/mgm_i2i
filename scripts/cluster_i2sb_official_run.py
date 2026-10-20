@@ -34,10 +34,11 @@ def probe(item, output, split, max_nfe=64, eval_minutes=180):
         if result.shape!=real.shape or not torch.isfinite(result).all():
             raise RuntimeError('Official inference produced an invalid output')
     peak=torch.cuda.max_memory_allocated()
-    report=dict(complete=True,official_bundle_sha256=cfg['official_bundle_sha256'],
+    report=dict(metadata)
+    report.update(complete=True,official_bundle_sha256=cfg['official_bundle_sha256'],
                 evaluation_data_hash=data_hash,evaluation_crop=crop,batch_size=1,precision='fp32',
                 inference_ms=timings,peak_allocated_bytes=peak,
-                peak_reserved_bytes=torch.cuda.max_memory_reserved(),environment=provenance(),**metadata)
+                peak_reserved_bytes=torch.cuda.max_memory_reserved(),environment=provenance())
     # Extrapolation only; it excludes metrics, disk, model loading and warmup.
     report['estimated_nfe64_two_draws_250_crops_minutes']=timings['4']/4*64*2*250/60000
     estimate=timings['4']/4*max_nfe*2*len(bank)/60000

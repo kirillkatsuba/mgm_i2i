@@ -211,7 +211,10 @@ def test_probe_gates_slow_evaluation_and_records_hardware(tmp_path, monkeypatch,
     monkeypatch.setattr(torch.cuda, 'max_memory_reserved', lambda:200)
     monkeypatch.setattr(torch.Tensor, 'cuda', lambda self, **k:self)
     monkeypatch.setattr(engine, 'provenance', lambda:dict(gpu='CPU fixture'))
-    monkeypatch.setattr(ref, 'load_for_evaluation', lambda *a:({}, None, None, {}))
+    # Include the real loader's overlapping provenance, not an empty stand-in.
+    metadata = dict(reference_bundle_sha256='bundle', precision='fp32',
+                    complete=True, measured_ms=['must be replaced'], generator_parameters=118593583)
+    monkeypatch.setattr(ref, 'load_for_evaluation', lambda *a:({}, None, None, metadata))
     bank = [torch.zeros(3, 128, 128, dtype=torch.uint8)]*250
     monkeypatch.setattr(metrics, 'evaluation_bank', lambda *a:(bank, None, 'common', None, 128))
     monkeypatch.setattr(metrics, 'predict_sr', lambda model, c, *a, **k:F.interpolate(c, scale_factor=4))
@@ -224,6 +227,9 @@ def test_probe_gates_slow_evaluation_and_records_hardware(tmp_path, monkeypatch,
         with pytest.raises(RuntimeError, match='allocation'):worker.probe(item, tmp_path, 'val', 90)
     report = json.loads((tmp_path/'probe.json').read_text())
     assert report['complete'] == complete and report['peak_allocated_bytes'] == 100
+    assert report['reference_bundle_sha256'] == 'bundle'
+    assert report['measured_ms'] == [seconds*1000]*3
+    assert report['precision'] == 'fp32' and report['generator_parameters'] == 118593583
 
 
 def test_reference_evaluator_uses_shared_metrics_and_unknown_training_cost(tmp_path, monkeypatch):
