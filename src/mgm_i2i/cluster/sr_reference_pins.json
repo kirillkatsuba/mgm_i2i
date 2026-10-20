@@ -1,0 +1,20 @@
+{
+  "sinsr": {
+    "directory": "SinSR-official",
+    "url": "https://github.com/wyf0912/SinSR.git",
+    "commit": "f1735490e980162435391162ddd18c0642327c5b",
+    "source_tree_sha256": "fb2dadecbdf054402d72799a6a14e1175f19cf112f245da160f709472fc2a965"
+  },
+  "vosr": {
+    "directory": "VOSR-official",
+    "url": "https://github.com/cswry/VOSR.git",
+    "commit": "516f292b99cf23c76fdc33351e86dc4f97711fe8",
+    "source_tree_sha256": "ca05a12729a537687f57ec63919766b696f79cbda4d3d99c33d4ebc705095f68"
+  },
+  "dino": {
+    "directory": "dinov2-official",
+    "url": "https://github.com/facebookresearch/dinov2.git",
+    "commit": "7764ea0f912e53c92e82eb78a2a1631e92725fc8",
+    "source_tree_sha256": "53ead62154162991316786f13aa082a24e5f3a6a14cc236c72a531762a9e9d09"
+  }
+}

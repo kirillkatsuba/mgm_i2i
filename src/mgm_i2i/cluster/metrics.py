@@ -34,6 +34,11 @@ def aggregate_images(rows, keys):
 
 
 def predict_sr(model, c, z, cfg, *, bridge=None, nfe=1, offset=0, draw=0):
+    if cfg['method'] == 'sr_reference':
+        from .sr_reference import predict
+        if nfe != 1:
+            raise ValueError('SinSR/VOSR references use exactly one sampling step')
+        return predict(model, c, offset, draw)
     if cfg['method'] not in ('i2sb', 'i2sb_official'):
         return sr_forward(model, c, z, cfg)
     # A separate RNG for each source image makes draws independent of batch size.
@@ -88,10 +93,14 @@ def _evaluate(checkpoint, output, split, batch_size, nfe=1, *,
               evaluation_data_root=None, evaluation_data_hash=None, expected_config=None):
     started = time.monotonic()
     checkpoint, output = Path(checkpoint), Path(output)
-    official = expected_config is not None and expected_config.get('method') == 'i2sb_official'
+    external_reference = expected_config is not None and expected_config.get('method') == 'sr_reference'
+    official = expected_config is not None and expected_config.get('method') in ('i2sb_official', 'sr_reference')
     official_metadata = {}
     if official:
-        from .official_i2sb import load_for_evaluation
+        if external_reference:
+            from .sr_reference import load_for_evaluation
+        else:
+            from .official_i2sb import load_for_evaluation
         state, gen, bridge, official_metadata = load_for_evaluation(expected_config, checkpoint)
     else:
         state = torch.load(checkpoint, map_location='cpu', weights_only=False)
@@ -181,7 +190,7 @@ def _evaluate(checkpoint, output, split, batch_size, nfe=1, *,
                     Image.fromarray(full_grid).save(output/'samples'/filename)
         offset += len(real)
         if official and (offset % 25 == 0 or offset == len(dataset)):
-            print(f'Official I2SB NFE={nfe}: {offset}/{len(dataset)} crops; '
+            print(f'{cfg["variant"]} NFE={nfe}: {offset}/{len(dataset)} crops; '
                   f'elapsed={(time.monotonic()-started)/60:.1f} min', flush=True)
     per_image, metrics = aggregate_images(rows, values.keys())
     output.mkdir(parents=True, exist_ok=True)

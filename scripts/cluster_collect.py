@@ -49,7 +49,7 @@ def collect(plan_path, split=None):
     columns = ['model_psnr', 'model_ssim', 'model_lpips', 'diversity_lpips', 'model_lr_mse_raw', 'steps']
     if results and all('model_projected_lpips' in row for row in results):
         columns += ['model_projected_psnr', 'model_projected_lpips', 'inference_ms_per_image']
-    coverage_note = ('One official externally pretrained checkpoint; no independent training-seed SD. '
+    coverage_note = ('Official externally pretrained checkpoints; each variant has one checkpoint, no independent training-seed SD. '
                      'Training steps and GPU cost are unknown, not zero.' if plan.get('external_pretrained') else
                      'Mean ± sample SD across seeds; n=1 has no SD.')
     report = [f'# {plan.get("evaluation_dataset", "DIV2K")} x4 — {split}', '',
@@ -82,7 +82,12 @@ def collect(plan_path, split=None):
         report += ['', 'Inference timings use different GPU models or batch sizes and must not be directly ranked.']
     if len({r['data_hash'] for r in results}) > 1:
         report += ['', 'Training datasets/protocols differ; common evaluation does not isolate architecture or objective effects.']
-    training_note = ('Official I2SB uses ImageNet256/ADM pretraining and the original 552.81M-parameter network. '
+    training_note = ('Author SinSR/VOSR checkpoints on the shared float pooling32→128 bank. '
+                     'Adapters, pretraining, component counts and memory are recorded in each metrics JSON. '
+                     'SinSR uses repeated reflect padding; VOSR uses float bicubic input, original wavelet alignment. '
+                     'This evaluates transfer to our degradation/resolution, not reproduction of their real-world benchmarks.'
+                     if plan.get('run_kind') == 'sr-reference-evaluation' else
+                     'Official I2SB uses ImageNet256/ADM pretraining and the original 552.81M-parameter network. '
                      'Evaluation is on the shared DIV2K crop128 bank without resize; this is not a full ImageNet256 reproduction.'
                      if plan.get('external_pretrained') else
                      'Training, warmup and evaluation times are in the per-run CSV. MSE warmup is shared by U-Net methods; ESRGAN has its own RRDB L1 warmup. I2SB trains from scratch.')

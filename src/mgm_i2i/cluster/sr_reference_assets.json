@@ -1,0 +1,46 @@
+{
+  "vosr": {
+    "VOSR_0.5B_os/args.json": {
+      "url": "https://huggingface.co/CSWRY/VOSR/resolve/f24b3061b7f350b81e1907bdcfc27f71fb4ff3f3/VOSR_0.5B_os/args.json",
+      "size": 769,
+      "sha256": "3f3d0d1637240fd02f6db5e340f1ecbc0642d403dd0e28896ba8b776762b26cd"
+    },
+    "VOSR_0.5B_os/checkpoints/ema_model.safetensors": {
+      "url": "https://huggingface.co/CSWRY/VOSR/resolve/f24b3061b7f350b81e1907bdcfc27f71fb4ff3f3/VOSR_0.5B_os/checkpoints/ema_model.safetensors",
+      "size": 1948337520,
+      "sha256": "45b6687b4ce59fa3451300f9e0fdcaf2e729c15e65f444af210a7851dfa13203"
+    },
+    "sd21_lwdecoder.pth": {
+      "url": "https://huggingface.co/CSWRY/VOSR/resolve/f24b3061b7f350b81e1907bdcfc27f71fb4ff3f3/sd21_lwdecoder.pth",
+      "size": 52086482,
+      "sha256": "a326a5e5c4a2445ce970987695979f3d5e5413d39b98c73a2ddac0055d2cdf59"
+    },
+    "stable-diffusion-2-1-base/vae/config.json": {
+      "url": "https://huggingface.co/CSWRY/VOSR/resolve/f24b3061b7f350b81e1907bdcfc27f71fb4ff3f3/stable-diffusion-2-1-base/vae/config.json",
+      "size": 582,
+      "sha256": "2260079ec0f32ff64e2f3d712b40bb28696633d02c38c8b4662d389595ad20ae"
+    },
+    "stable-diffusion-2-1-base/vae/diffusion_pytorch_model.safetensors": {
+      "url": "https://huggingface.co/CSWRY/VOSR/resolve/f24b3061b7f350b81e1907bdcfc27f71fb4ff3f3/stable-diffusion-2-1-base/vae/diffusion_pytorch_model.safetensors",
+      "size": 334643276,
+      "sha256": "a1d993488569e928462932c8c38a0760b874d166399b14414135bd9c42df5815"
+    },
+    "torch_cache/checkpoints/dinov2_vitb14_pretrain.pth": {
+      "url": "https://huggingface.co/CSWRY/VOSR/resolve/f24b3061b7f350b81e1907bdcfc27f71fb4ff3f3/torch_cache/checkpoints/dinov2_vitb14_pretrain.pth",
+      "size": 346378731,
+      "sha256": "0b8b82f85de91b424aded121c7e1dcc2b7bc6d0adeea651bf73a13307fad8c73"
+    }
+  },
+  "sinsr": {
+    "SinSR_v1.pth": {
+      "url": "https://github.com/wyf0912/SinSR/releases/download/v1.0/SinSR_v1.pth",
+      "size": 477910858,
+      "sha256": null
+    },
+    "autoencoder_vq_f4.pth": {
+      "url": "https://github.com/zsyOAOA/ResShift/releases/download/v2.0/autoencoder_vq_f4.pth",
+      "size": 221364711,
+      "sha256": null
+    }
+  }
+}
