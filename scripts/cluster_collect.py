@@ -10,7 +10,7 @@ def collect(plan_path, split=None):
     plan = json.loads(plan_path.read_text())
     split = split or plan.get('evaluation_split', 'val')
     results, missing = [], []
-    items = plan.get('eval', plan['train'])
+    items = plan.get('test', plan.get('eval', plan['train'])) if split == 'test' else plan.get('eval', plan['train'])
     for item in items:
         cfg = item['config']
         metric_path = Path(item['output'])/f'{split}_metrics.json'
@@ -100,9 +100,16 @@ def collect(plan_path, split=None):
     print('\n'.join(report))
 
 
-if __name__ == '__main__':
+def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--plan', type=Path, required=True)
     p.add_argument('--split', choices=['val','test','external'], default=None)
     args = p.parse_args()
-    collect(args.plan, args.split)
+    plan = json.loads(args.plan.read_text())
+    splits = [args.split] if args.split else plan.get('collect_splits', [plan.get('evaluation_split', 'val')])
+    for split in splits:
+        collect(args.plan, split)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,5 +1,9 @@
 # MGM для I2I: исследование и эксперименты
 
+**Абляции MGM,21 октября:** [недостающие noise-режимы v1/v2](MGM_NOISE_ABLATIONS.md). `bash slurm/launch_mgm_ablation.sh --suite core` готовит единый план: 12 новых обучений с прежними MSE initializers и 18 validation evaluations, включая старые controls. `--suite paper` добавляет matched .05 и midpoint-only; `--retrain-controls` пересчитывает controls текущим кодом. Общий лимит 2 GPU на обе архитектуры, без mem. Новые GPU-результаты ещё не получены.
+
+**Полная новая серия:** `bash slurm/launch_mgm_ablation.sh --suite paper --with-test --max-parallel 2` (dry run), затем та же команда с `--submit`: MSE50 reuse → field50 → MGM80 → validation → test → обе сводки. Default run root `cluster_runs/mgm_noise_paper_val_test_20261021`; 24 новых обучения и по30 val/test evaluations.
+
 **Авторский I²SB,20 октября:** подготовлена отдельная оценка готового `sr4x-pool` checkpoint (оригинальная ADM552.81M, EMA) на наших validation crop128; NFE1/4/16/64, GPU probe перед полной оценкой. [Инструкция и ограничения сравнения](I2SB_OFFICIAL.md).
 
 **Текущий протокол,19 октября:** `random128-multicrop-v4`: по4 новых random crop128 на каждое train-фото за эпоху, по5 фиксированных случайных crop128 на каждое val/test-фото. Split800/50/50 и pooling×4 сохраняются. Data root `data/div2k_multicrop128`. [Подготовка, обучение и общая оценка](MULTICROP_PROTOCOL.md).

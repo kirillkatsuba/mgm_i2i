@@ -22,6 +22,9 @@ VARIANTS = {
     'gan': {'method': 'gan'},
     'mgm_midpoint': {'method': 'mgm', 'midpoint': True},
     'mgm_critic_noise': {'method': 'mgm', 'noise_g': 0.},
+    'mgm_no_noise': {'method': 'mgm', 'noise_g': 0., 'noise_f': 0.},
+    'mgm_matched_noise_005': {'method': 'mgm', 'noise_g': .05, 'noise_f': .05},
+    'mgm_midpoint_critic_noise': {'method': 'mgm', 'midpoint': True, 'noise_g': 0.},
     'mgm_antithetic': {'method': 'mgm', 'antithetic': True},
 }
 

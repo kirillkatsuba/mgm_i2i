@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT/'src'))
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--plan', required=True, type=Path)
-    p.add_argument('--phase', choices=['warmup', 'field_warmup', 'train', 'eval'], required=True)
+    p.add_argument('--phase', choices=['warmup', 'field_warmup', 'train', 'eval', 'test'], required=True)
     p.add_argument('--index', type=int, required=True)
     p.add_argument('--resume', action='store_true')
     p.add_argument('--resume-if-exists', action='store_true', help='Continue existing checkpoints, start missing jobs')
@@ -24,14 +24,19 @@ def main():
     if hashlib.sha256(raw).hexdigest() != expected:
         raise ValueError('Plan was edited after creation. Create a new plan instead.')
     plan = json.loads(raw)
-    args.split = args.split or plan.get('evaluation_split', 'val')
+    if args.phase == 'test':
+        if args.split is not None and args.split != 'test':
+            p.error('The test phase requires --split test or no explicit split')
+        args.split = 'test'
+    else:
+        args.split = args.split or plan.get('evaluation_split', 'val')
     jobs = plan[args.phase]
     if not 0 <= args.index < len(jobs):
         p.error('array index outside plan')
     item = jobs[args.index]
     from mgm_i2i.cluster.engine import train
     from mgm_i2i.cluster.metrics import evaluate
-    if args.phase == 'eval':
+    if args.phase in ('eval', 'test'):
         if args.resume or args.resume_if_exists:
             p.error('--resume applies to training, not evaluation')
         evaluate(Path(item['checkpoint']), item['output'], args.split,

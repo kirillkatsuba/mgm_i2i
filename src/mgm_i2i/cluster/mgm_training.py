@@ -110,7 +110,8 @@ def validate_field_checkpoint(state, config, data_hash, init_hash):
     if init_hash is None or state['init_hash'] != init_hash:
         raise ValueError('Field warmup used different generator initialization')
     for key in ('seed', 'width', 'scale', 'projection', 'conditioned', 'architecture_version',
-                'noise_f', 'batch_size', 'grad_accumulation', 'lr_aux', 'adam_betas', 'field_initialization'):
+                'noise_f', 'midpoint', 'antithetic', 'batch_size', 'grad_accumulation',
+                'lr_aux', 'adam_betas', 'field_initialization'):
         if source.get(key) != config.get(key):
             raise ValueError(f'Field warmup mismatch: {key}')
     if state['step'] - state['skipped_aux'] <= 0:
