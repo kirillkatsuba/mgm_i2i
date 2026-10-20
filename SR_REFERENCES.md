@@ -68,8 +68,9 @@ FP32 для всех компонентов, batch1, без xformers и без t
 с прежним MGM на V100. Загруженные checkpoint-сети проверяются `strict=True`,
 включая VOSR (его CLI допускает `strict=False`). Пропуск несовпавших весов запрещён.
 
-Локально проверены оригинальные архитектуры на meta tensors и численный CPU forward
-уменьшенного авторского flexible DiT. Проверены совпадение SinSR sampler с upstream,
+Локально проверены оригинальные архитектуры на meta tensors и полный численный CPU
+проход адаптера VOSR с уменьшенными VAE, DINOv2, flexible DiT и light decoder,
+включая исходную wavelet-коррекцию цвета и возврат RGB128. Проверены совпадение SinSR sampler с upstream,
 границы, RNG и Slurm. **Большие pretrained weights здесь не скачивались; настоящий
 численный forward обоих pretrained checkpoints и совместимость на V100 проверит
 кластерный probe.** Не считаем результаты или VRAM заранее измеренными.
@@ -143,6 +144,13 @@ Probe оценивает полную оценку по самому медле�
 Другой лимит/корень:
 `bash slurm/launch_sr_references.sh --run-root cluster_runs/sr_refs_multi5_val_r2 --eval-minutes 180 --submit`.
 Повторный `--submit` существующего плана запрещён, чтобы не задвоить очередь.
+
+Если исправление касается только VOSR, перезапускать только его:
+`bash slurm/launch_sr_references.sh --models vosr --run-root cluster_runs/sr_refs_multi5_val_r3 --submit`.
+Предварительно отменить оставшиеся задачи только старой VOSR-цепочки. Результаты
+SinSR и его выполняющиеся задачи сохраняются. Сообщение diffusers об отсутствии
+`accelerate` означает fallback загрузки VAE, а не ошибку инференса; установка
+`accelerate` для корректности этого запуска не требуется.
 
 ## 4. Проверить и забрать результаты
 

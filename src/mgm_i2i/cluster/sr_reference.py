@@ -156,9 +156,10 @@ def vosr_code(root):
     decoder = importlib.import_module('_mgm_vosr_models.light_decoder').LightDecoder
     core = load_module('_mgm_vosr_core', root/'vosr.py')
     vae = load_module('_mgm_vosr_vae', root/'tiled_vae.py')
+    from PIL import Image
     from torchvision.transforms import Normalize
     import numpy as np
-    scope = dict(torch=torch, F=F, Normalize=Normalize, np=np,
+    scope = dict(torch=torch, F=F, Normalize=Normalize, np=np, Image=Image,
                  IMAGENET_DEFAULT_MEAN=(.485, .456, .406),
                  IMAGENET_DEFAULT_STD=(.229, .224, .225))
     tree = ast.parse((root/'inference_vosr_onestep.py').read_text())

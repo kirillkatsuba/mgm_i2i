@@ -119,6 +119,54 @@ def test_original_backbones_accept_required_shapes_and_have_author_parameter_cou
     assert result.shape == latent.shape and torch.isfinite(result).all()
 
 
+def test_original_wavelet_helper_has_pillow_globals_and_restores_source_color(sources):
+    import numpy as np
+    from PIL import Image
+    _, _, _, _, helpers = ref.vosr_code(sources['vosr'])
+    # Different sizes exercise the original PIL resize as well as Image.fromarray.
+    source = Image.new('RGB', (16, 16), (20, 40, 60))
+    target = Image.new('RGB', (32, 32), (140, 120, 100))
+    result = helpers['wavelet_color_fix'](target, source)
+    assert result.size == target.size and result.mode == 'RGB'
+    np.testing.assert_allclose(np.asarray(result),
+                               np.broadcast_to([20, 40, 60], (32, 32, 3)), atol=1, rtol=0)
+
+
+def test_vosr_complete_restore_with_real_small_components_including_color_alignment(sources):
+    """Run the entire adapter, not just the DiT: no downloads or pretrained weights."""
+    import types
+    from diffusers import AutoencoderKL
+    dit, decoder, core, vae_code, helpers = ref.vosr_code(sources['vosr'])
+    ref._package('dinov2', sources['dino']/'dinov2')
+    dino_class = importlib.import_module('dinov2.models.vision_transformer').DinoVisionTransformer
+    model = ref.VOSR.__new__(ref.VOSR)
+    nn.Module.__init__(model)
+    model.args = SimpleNamespace(ae_type='sd2', posterior_mode=True, vae_tile_size=0,
+                                 vae_tile_overlap=0, dinov2_size=448, layer_dinov2b_list=[1])
+    model.vae_code, model.helpers = vae_code, helpers
+    model.ae = AutoencoderKL(in_channels=3, out_channels=3, latent_channels=4,
+                             block_out_channels=(32, 32, 32, 32), layers_per_block=1,
+                             down_block_types=('DownEncoderBlock2D',)*4,
+                             up_block_types=('UpDecoderBlock2D',)*4, sample_size=128)
+    model.decoder = decoder(block_out_channels=(32, 32, 32, 32), layers_per_block=1)
+    model.dino = dino_class(img_size=448, patch_size=14, embed_dim=32, depth=2,
+                            num_heads=4, block_chunks=0, ffn_layer='mlp')
+    model.dino.forward_with_features = types.MethodType(helpers['forward_with_features'], model.dino)
+    model.net = dit(input_size=64, patch_size=2, in_channels=8, out_channels=4, hidden_size=64,
+                    depth=1, num_heads=4, z_dims=32, encdim_ratio=1, use_rope=True,
+                    use_rmsnorm=True, auxiliary_time_cond=True)
+    model.net.forward = model.net.forward_flexible
+    model.core = core(accelerator=SimpleNamespace(device='cpu'))
+    model.eval().requires_grad_(False)
+    c = torch.rand(1, 3, 32, 32)*2-1
+    original = c.clone()
+    result = ref.predict(model, c)
+    assert result.shape == (1, 3, 128, 128) and torch.isfinite(result).all()
+    assert result.min() >= -1 and result.max() <= 1
+    torch.testing.assert_close(c, original, atol=0, rtol=0)
+    torch.testing.assert_close((result+1)*127.5, ((result+1)*127.5).round(), atol=2e-5, rtol=0)
+
+
 def test_bicubic_preserves_float_pooling_input():
     c = torch.full((1, 3, 32, 32), .123456)
     up = ref.tensor_bicubic(c)
