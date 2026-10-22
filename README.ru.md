@@ -1,0 +1,93 @@
+> Historical development notes. This snapshot predates the final test analysis; use the English README and docs/REPRODUCING.md for the current project.
+
+# MGM для I2I: исследование и эксперименты
+
+**Абляции MGM,21 октября:** [недостающие noise-режимы v1/v2](MGM_NOISE_ABLATIONS.md). `bash slurm/launch_mgm_ablation.sh --suite core` готовит единый план: 12 новых обучений с прежними MSE initializers и 18 validation evaluations, включая старые controls. `--suite paper` добавляет matched .05 и midpoint-only; `--retrain-controls` пересчитывает controls текущим кодом. Общий лимит 2 GPU на обе архитектуры, без mem. Новые GPU-результаты ещё не получены.
+
+**Полная новая серия:** `bash slurm/launch_mgm_ablation.sh --suite paper --with-test --max-parallel 2` (dry run), затем та же команда с `--submit`: MSE50 reuse → field50 → MGM80 → validation → test → обе сводки. Default run root `cluster_runs/mgm_noise_paper_val_test_20261021`; 24 новых обучения и по30 val/test evaluations.
+
+**Авторский I²SB,20 октября:** подготовлена отдельная оценка готового `sr4x-pool` checkpoint (оригинальная ADM552.81M, EMA) на наших validation crop128; NFE1/4/16/64, GPU probe перед полной оценкой. [Инструкция и ограничения сравнения](I2SB_OFFICIAL.md).
+
+**Текущий протокол,19 октября:** `random128-multicrop-v4`: по4 новых random crop128 на каждое train-фото за эпоху, по5 фиксированных случайных crop128 на каждое val/test-фото. Split800/50/50 и pooling×4 сохраняются. Data root `data/div2k_multicrop128`. [Подготовка, обучение и общая оценка](MULTICROP_PROTOCOL.md).
+
+**Текущий MGM-рецепт:** width120/240/480, physical/effective batch32 без накопления, Adam lr_G=lr_field=1e-5, betas=(0.8,0.999). Новые warmup обеих архитектур:50 эпох при batch16; поле50 и MGM80 эпох при batch32. Эпоха=3200 патчей; это10000/5000/8000 шагов warmup/field/MGM. GPU-проверка batch32 ещё предстоит.
+
+**Решения и идеи:** [research/IDEAS.md](research/IDEAS.md). Новые кластерные планы по умолчанию используют ширины **120/240/480** (G — 16.02 млн параметров, MGM с полем — 33.32 млн) и архитектуру v2: RGB-residual без `tanh`, sinusoidal TimeEmbedding поля. Абляция `--architecture-version 1` сохраняет tanh и входные time maps при выбранной ширине. Старые checkpoints оцениваются с прежней архитектурой; подробности совместимости — в [CLUSTER.md](CLUSTER.md).
+
+**Быстрый запуск двух MGM:** после подготовки данных — `bash slurm/launch_mgm.sh` (dry run), затем `bash slurm/launch_mgm.sh --submit`. Лимиты warmup/field/main/eval:60/90/240/30 минут; host RAM параметрами Slurm не задаётся.
+
+**Следующие запуски:** [wide v1 и v2 critic-only с multicrop](MULTICROP_PROTOCOL.md). [Предыдущий этап и BSD100](EXPERIMENTS_V1_V2_BSD100.md). [Формулы выходов SR и DDPM++ для MGM](research/OUTPUTS_AND_DDPM_BACKBONES.md).
+
+**Обновлённый MGM training:** [перенос поля, warmup latent sweep, Adam авторов и batch probe V100](MGM_FIELD_WARMUP_DIAGNOSTICS.md). Новые флаги применяются явно; старые планы сохраняют прежние настройки.
+
+**Запуск на Slurm:** актуальные команды — [MULTICROP_PROTOCOL.md](MULTICROP_PROTOCOL.md); окружение и исторические команды — [CLUSTER.md](CLUSTER.md). Прежний план v4 включает MSE/MSE+perceptual/ESRGAN/MGM/I²SB, 3 seed, отдельные warmup/train/eval arrays и collector. Каждая GPU-задача использует одну GPU; default `--max-parallel 4`. Историческая серия v4: 48 GPU-часов training плюс evaluation; пилот всех пяти методов — 13 GPU-минут training плюс evaluation. Перед `--submit` создаётся reviewable plan; в этой сессии Slurm/GPU не запускались.
+
+**Полные фотографии:** [FULL_IMAGES.md](FULL_IMAGES.md) — дополнительный инференс целых DIV2K-кадров готовыми EMA-checkpoints, PNG без уменьшения, сравнение методов в HTML и отдельные PSNR/SSIM. Новый режим и его тесты пока не запускались.
+
+GitHub содержит исходники, конфигурации и текстовые инструкции. Датасеты, веса, PDF, сторонние репозитории, Mac-окружение и архив офлайн-пакета в Git **не включены**. Для Linux скачивание готовит `scripts/cluster_prepare.py`. Раздел ниже описывает ранее подготовленный локальный комплект на Mac; наличие этих файлов после `git clone` не предполагается.
+
+## Локальный офлайн-пакет для Mac
+
+Подробная содержательная подготовка без новых запусков: **[теория и проект исследования](offline/THEORY_AND_RESEARCH_PLAN.md)**, **[текст десяти слайдов на 20 минут](offline/PRESENTATION_20_MIN.md)** и **[34 вопроса к защите](offline/DEFENSE_QA.md)**. Эти новые текстовые документы находятся в папке проекта. Прежний ZIP не пересобирался в рамках запроса без запуска скриптов.
+
+Начни с **[offline/guide.html](offline/guide.html)**: это самостоятельная инструкция на русском с формулами, локальными ссылками и планом на 20 часов. Интернет для чтения не нужен. Текстовая версия: [offline/GUIDE.md](offline/GUIDE.md).
+
+Пакет подготовлен для этого Mac: Apple Silicon, Python 3.13. Установочные wheel-файлы в `offline/wheels/` относятся именно к этой платформе. Статьи и наш исходный код переносимы; `.venv` не переносима.
+
+Всё уже находится в папке проекта и готово к работе. Резервная копия — `MGM_I2I_OFFLINE_MAC.zip` в корне проекта: статьи, данные, веса, установочные файлы, код и проверочные результаты. После распаковки при необходимости выполни `sh scripts/setup_offline.sh`. Начальная страница — `START_HERE.html`; её можно открыть в Safari/Chrome без локального сервера.
+
+## Первые команды
+
+В Terminal, из папки проекта:
+
+```bash
+cd /Users/kirill/edu/mgm_i2i
+.venv/bin/python scripts/check_offline.py
+.venv/bin/python -m pytest -q tests
+.venv/bin/python scripts/train.py --config configs/toy_mse.json
+.venv/bin/python scripts/train.py --config configs/toy_mgm.json
+.venv/bin/python scripts/compare.py runs/toy_mse runs/toy_mgm
+```
+
+Для нового запуска укажи другое `--output`; существующие результаты не перезаписываются. `Ctrl+C` сохраняет checkpoint.
+
+## Окружение и данные без сети
+
+Окружение уже установлено. Если понадобится восстановить его:
+
+```bash
+sh scripts/setup_offline.sh
+```
+
+Все установочные файлы, изображения CIFAR-10, LPIPS/AlexNet-веса и JS для формул находятся локально. Скрипты обучения не скачивают данные. `scripts/download_materials.py` нужен только для повторной подготовки при наличии сети.
+
+## Изображения
+
+```bash
+.venv/bin/python scripts/train.py --config configs/cifar_mse.json
+.venv/bin/python scripts/train.py --config configs/cifar_mgm.json
+.venv/bin/python scripts/train.py --config configs/cifar_gan.json
+.venv/bin/python scripts/compare.py runs/cifar_mse runs/cifar_mgm runs/cifar_gan
+```
+
+Это конфигурации стартового исследования, а не подобранные лучшие гиперпараметры. На CPU сначала проверь 20–50 шагов, измерь скорость и реши, сколько обучать. Команды smoke-test и продолжения есть в руководстве.
+
+## Где что находится
+
+- `materials/` — основная статья и десять дополнительных PDF; карта чтения в руководстве.
+- `third_party/` — распакованные публичные исходники EDM, SiD, pix2pix, Zero-Flow и categorical MGM. Это справочный код; наш прототип его не импортирует.
+- `src/mgm_i2i/` — наша адаптация: модели, данные, MGM-loss и метрики.
+- `scripts/` — обучение, оценка, сравнение, проверка офлайн-работы.
+- `configs/` — настройки синтетических и CIFAR-экспериментов.
+- `data/cifar10/` — 50 000 исходных train-изображений и 10 000 test-изображений. Train разбивается на 45 000 train / 5 000 val.
+- `runs/verified_*` — проверочные запуски, полученные при подготовке; не итоговый результат задания.
+- `offline/verification.json` — результат проверки с заблокированными сетевыми соединениями.
+- `offline/inventory.json` — происхождение и SHA-256 скачанных файлов.
+- `offline/AI_AND_COMPUTE.md` — шаблон раскрытия использования AI и вычислений по ТЗ.
+
+Главная гипотеза: условный MGM сравнивает распределения HR-выходов для одного LR-входа. На синтетике проверяем две моды и неопределённость; на CIFAR — точность, perceptual-качество, согласованность и стоимость. Совпадение marginal-распределений само по себе не доказывает правильную I2I-связь.
+
+## Дополнительные авторские SR-бейзлайны
+
+Инференс SinSR и одношагового VOSR на общих pooling-парах, подготовка весов и
+независимые Slurm-цепочки: [SR_REFERENCES.md](SR_REFERENCES.md).

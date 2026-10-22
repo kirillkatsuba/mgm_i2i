@@ -1,0 +1,55 @@
+{
+  "data_manifest_sha256": "4873c0d081d4552c5b5f2f16f75a322593c5dec530f4d29c312ebc92a9db23b0",
+  "files": [
+    {
+      "path": "test_metrics.csv",
+      "source": "reports/sr_references_test_20261021/test_comparison.csv",
+      "sha256": "d77dca5dcb88c09ee865c966352ceba3162c66e393b08f32938a9ce0cf3f6d52"
+    },
+    {
+      "path": "noise_ablation.csv",
+      "source": "reports/mgm_noise_20261021/comparison.csv",
+      "sha256": "80441f3cc7a4fe8048fc487a81328ff9d385713954da297966affcc80cb06f5e"
+    },
+    {
+      "path": "paired_baselines.csv",
+      "source": "reports/baselines_test_20261021/paired_comparisons.csv",
+      "sha256": "58c65a21f1018993eee352f68f1c12c0874c5ea2907afd2526af8e9701734f1e"
+    },
+    {
+      "path": "paired_sinsr.csv",
+      "source": "reports/sr_references_test_20261021/paired_comparisons.csv",
+      "sha256": "4617256ffd1fe8bfe9fc8b9a9e70e0d98f8af2ee162b1ce9cb617db569e9f02e"
+    },
+    {
+      "path": "validation_choice.json",
+      "source": "reports/mgm_noise_20261021/validation_choice.json",
+      "sha256": "e63a49921a63ea23f9226d4953bb1a3555430b7a6cb8bc3e17692b3ddf127c81"
+    },
+    {
+      "path": "../presentation.pdf",
+      "source": "artifacts/mgm_sr_20261020/presentation/main.pdf",
+      "sha256": "7fcb0d161a8456f52964fb12822d733b30ce2229ed28d03740b99abb189cff37"
+    }
+  ],
+  "archive_sha256": {
+    "MGM": "ddf6cdb23cd3011baeeeede434daa569048f3de83c96310f2f02da7a4561edff",
+    "baselines": "a8dcd60e9f55464b4823c1c03516a2492ffd350b25a68d319033a48ab6676c2b",
+    "SinSR": "bd27788ceda2f1b5454eecbee2e141e62bf64684a93ce2ba93e4d0cd8dfd90b5"
+  },
+  "sinSR_checkpoint_sha256": "a3898498db2a99f20754a23a55240746800ecbc6b808c5389e794ec2022db6a4",
+  "sinSR_source_pins": {
+    "sinsr": {
+      "directory": "SinSR-official",
+      "url": "https://github.com/wyf0912/SinSR.git",
+      "commit": "f1735490e980162435391162ddd18c0642327c5b",
+      "source_tree_sha256": "fb2dadecbdf054402d72799a6a14e1175f19cf112f245da160f709472fc2a965"
+    }
+  },
+  "new_training_phases": 48,
+  "new_evaluations": 60,
+  "notes": [
+    "Saved hashes and available image/metric exports were audited; weights and float banks are not included.",
+    "The existing presentation was copied without editing or rebuilding it."
+  ]
+}

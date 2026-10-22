@@ -13,6 +13,7 @@ slurm/logs/
 materials/
 third_party/
 *.pdf
+!docs/presentation.pdf
 *.pt
 *.pth
 *.npy

@@ -1,91 +1,73 @@
-# MGM для I2I: исследование и эксперименты
+# Conditional MGM for Image Super-Resolution
 
-**Абляции MGM,21 октября:** [недостающие noise-режимы v1/v2](MGM_NOISE_ABLATIONS.md). `bash slurm/launch_mgm_ablation.sh --suite core` готовит единый план: 12 новых обучений с прежними MSE initializers и 18 validation evaluations, включая старые controls. `--suite paper` добавляет matched .05 и midpoint-only; `--retrain-controls` пересчитывает controls текущим кодом. Общий лимит 2 GPU на обе архитектуры, без mem. Новые GPU-результаты ещё не получены.
+A PyTorch research project adapting **Midpoint Generative Models (MGM)** to paired image-to-image translation. The experiment studies **one-pass ×4 super-resolution** under a known average-pooling degradation: **LR32 → HR128**.
 
-**Полная новая серия:** `bash slurm/launch_mgm_ablation.sh --suite paper --with-test --max-parallel 2` (dry run), затем та же команда с `--submit`: MSE50 reuse → field50 → MGM80 → validation → test → обе сводки. Default run root `cluster_runs/mgm_noise_paper_val_test_20261021`; 24 новых обучения и по30 val/test evaluations.
+**Selected model:** 16.02M inference parameters · 9.13 ms/patch on V100 · test LPIPS 0.13908. Against our compact I²SB at 16 NFE with the same final projection, it achieves **7.7% lower mean LPIPS at ≈16× lower native inference latency**, with lower PSNR/SSIM.
 
-**Авторский I²SB,20 октября:** подготовлена отдельная оценка готового `sr4x-pool` checkpoint (оригинальная ADM552.81M, EMA) на наших validation crop128; NFE1/4/16/64, GPU probe перед полной оценкой. [Инструкция и ограничения сравнения](I2SB_OFFICIAL.md).
+[Presentation](docs/presentation.pdf) · [Method](docs/METHOD.md) · [Reproduce](docs/REPRODUCING.md) · [Full results](docs/results/test_metrics.csv)
 
-**Текущий протокол,19 октября:** `random128-multicrop-v4`: по4 новых random crop128 на каждое train-фото за эпоху, по5 фиксированных случайных crop128 на каждое val/test-фото. Split800/50/50 и pooling×4 сохраняются. Data root `data/div2k_multicrop128`. [Подготовка, обучение и общая оценка](MULTICROP_PROTOCOL.md).
+## What I implemented
 
-**Текущий MGM-рецепт:** width120/240/480, physical/effective batch32 без накопления, Adam lr_G=lr_field=1e-5, betas=(0.8,0.999). Новые warmup обеих архитектур:50 эпох при batch16; поле50 и MGM80 эпох при batch32. Эпоха=3200 патчей; это10000/5000/8000 шагов warmup/field/MGM. GPU-проверка batch32 ещё предстоит.
+- **Conditional MGM:** compare generated and real HR endpoints sharing the same LR condition, using a conditional displacement field.
+- **Two residual U-Nets:** widths 120/240/480, with a bounded residual in v1 and an unrestricted residual plus sinusoidal field time embeddings in v2.
+- **Data consistency:** an established null-space projection enforces the known LR observation before clipping.
+- **Training and evaluation:** warm-started field, 50/50/80-epoch schedule, five noise regimes per architecture, three seeds, Slurm job arrays, fixed test pairs and paired photo-bootstrap analysis.
 
-**Решения и идеи:** [research/IDEAS.md](research/IDEAS.md). Новые кластерные планы по умолчанию используют ширины **120/240/480** (G — 16.02 млн параметров, MGM с полем — 33.32 млн) и архитектуру v2: RGB-residual без `tanh`, sinusoidal TimeEmbedding поля. Абляция `--architecture-version 1` сохраняет tanh и входные time maps при выбранной ширине. Старые checkpoints оцениваются с прежней архитектурой; подробности совместимости — в [CLUSTER.md](CLUSTER.md).
+For $C=DY$, where $D$ is average pooling ×4:
 
-**Быстрый запуск двух MGM:** после подготовки данных — `bash slurm/launch_mgm.sh` (dry run), затем `bash slurm/launch_mgm.sh --submit`. Лимиты warmup/field/main/eval:60/90/240/30 минут; host RAM параметрами Slurm не задаётся.
+$$
+X_0=G_\theta(C,Z),\quad X_1=Y,\qquad
+f_\psi(C,t,\widetilde X_t)\approx\mathbb E[Y-X_0\mid C,t,\widetilde X_t].
+$$
 
-**Следующие запуски:** [wide v1 и v2 critic-only с multicrop](MULTICROP_PROTOCOL.md). [Предыдущий этап и BSD100](EXPERIMENTS_V1_V2_BSD100.md). [Формулы выходов SR и DDPM++ для MGM](research/OUTPUTS_AND_DDPM_BACKBONES.md).
+$$
+G_{v1/v2}(c,z)=\Pi_c\!\left(U(c)+h_{v1/v2}(F_\theta([U(c),z]))\right),\quad
+h_{v1}=\tanh,\quad h_{v2}=\mathrm{id},
+$$
 
-**Обновлённый MGM training:** [перенос поля, warmup latent sweep, Adam авторов и batch probe V100](MGM_FIELD_WARMUP_DIAGNOSTICS.md). Новые флаги применяются явно; старые планы сохраняют прежние настройки.
+$$
+\Pi_c(v)=v+R(c-Dv),\qquad DR=I,\qquad D\Pi_c(v)=c.
+$$
 
-**Запуск на Slurm:** актуальные команды — [MULTICROP_PROTOCOL.md](MULTICROP_PROTOCOL.md); окружение и исторические команды — [CLUSTER.md](CLUSTER.md). Прежний план v4 включает MSE/MSE+perceptual/ESRGAN/MGM/I²SB, 3 seed, отдельные warmup/train/eval arrays и collector. Каждая GPU-задача использует одну GPU; default `--max-parallel 4`. Историческая серия v4: 48 GPU-часов training плюс evaluation; пилот всех пяти методов — 13 GPU-минут training плюс evaluation. Перед `--submit` создаётся reviewable plan; в этой сессии Slurm/GPU не запускались.
+$U$ is bicubic upsampling; $R$ repeats each LR pixel over its 4×4 HR block. Projection follows [GAN Prior Based Null-Space Learning for Consistent Super-Resolution](https://ojs.aaai.org/index.php/AAAI/article/view/25372), rather than being a new MGM contribution.
 
-**Полные фотографии:** [FULL_IMAGES.md](FULL_IMAGES.md) — дополнительный инференс целых DIV2K-кадров готовыми EMA-checkpoints, PNG без уменьшения, сравнение методов в HTML и отдельные PSNR/SSIM. Новый режим и его тесты пока не запускались.
+## Test results
 
-GitHub содержит исходники, конфигурации и текстовые инструкции. Датасеты, веса, PDF, сторонние репозитории, Mac-окружение и архив офлайн-пакета в Git **не включены**. Для Linux скачивание готовит `scripts/cluster_prepare.py`. Раздел ниже описывает ранее подготовленный локальный комплект на Mac; наличие этих файлов после `git clone` не предполагается.
+DIV2K: **800 train / 50 validation / 50 test photographs**. Training uses four fresh crop128 patches per photo per epoch; evaluation uses five fixed crops per photo. Local results average three training seeds. The primary v2/no-interpolant-noise recipe was selected on validation; its latent input remains random.
 
-## Локальный офлайн-пакет для Mac
+| Model | PSNR ↑ | LPIPS ↓ | Native latency, ms ↓ |
+|---|---:|---:|---:|
+| MSE U-Net | **31.476** | 0.22444 | 9.56 |
+| MSE + VGG perceptual | 30.993 | 0.15251 | 9.58 |
+| ESRGAN + P | 28.943 | **0.13716** | 37.77* |
+| I²SB-small, 16 NFE + P | 29.455 | 0.15068 | 146.95* |
+| I²SB-small, 64 NFE + P | 28.904 | 0.14284 | 585.05* |
+| MGM v1, no interpolant noise | <ins>28.167</ins> | <ins>0.13872</ins> | <ins>**9.08**</ins> |
+| MGM v2, no interpolant noise | <ins>27.948</ins> | <ins>0.13908</ins> | <ins>9.13</ins> |
+| SinSR, author checkpoint + P | 28.340 | 0.14600 | 140.21* |
 
-Подробная содержательная подготовка без новых запусков: **[теория и проект исследования](offline/THEORY_AND_RESEARCH_PLAN.md)**, **[текст десяти слайдов на 20 минут](offline/PRESENTATION_20_MIN.md)** и **[34 вопроса к защите](offline/DEFENSE_QA.md)**. Эти новые текстовые документы находятся в папке проекта. Прежний ZIP не пересобирался в рамках запроса без запуска скриптов.
+Underlined: MGM. Bold: best displayed mean. **+P** applies the same final consistency projection; it is already built into MSE/perceptual/MGM. FP32, batch1, Tesla V100-SXM2-32GB. *Added projection time is excluded. [All 18 configurations, native/projected outputs, SSIM and uncertainty](docs/RESULTS.md).
 
-Начни с **[offline/guide.html](offline/guide.html)**: это самостоятельная инструкция на русском с формулами, локальными ссылками и планом на 20 часов. Интернет для чтения не нужен. Текстовая версия: [offline/GUIDE.md](offline/GUIDE.md).
+![Perceptual quality versus native inference latency on the common test set](docs/assets/quality_latency.png)
 
-Пакет подготовлен для этого Mac: Apple Silicon, Python 3.13. Установочные wheel-файлы в `offline/wheels/` относятся именно к этой платформе. Статьи и наш исходный код переносимы; `.venv` не переносима.
+MGM provides a useful speed–quality trade-off against our compact bridge. **A general quality advantage over ESRGAN or SinSR is not established.** ESRGAN uses standard RRDBNet geometry with our training recipe; I²SB-small is our compact adaptation, not the authors' ADM model. SinSR is externally pretrained and uses padding/VQ processing, so its timing and quality measure transfer to this benchmark.
 
-Всё уже находится в папке проекта и готово к работе. Резервная копия — `MGM_I2I_OFFLINE_MAC.zip` в корне проекта: статьи, данные, веса, установочные файлы, код и проверочные результаты. После распаковки при необходимости выполни `sh scripts/setup_offline.sh`. Начальная страница — `START_HERE.html`; её можно открыть в Safari/Chrome без локального сервера.
+## Visual comparison
 
-## Первые команды
+![Fixed test crops: HR, MSE+perceptual, MGM v2, ESRGAN+projection, I2SB16+projection and SinSR+projection](docs/assets/test_samples.png)
 
-В Terminal, из папки проекта:
+First four test photographs, crop0, local seed0/draw1; original exported pixels. MGM is the validation-selected v2/no-interpolant-noise model. Smooth regions expose grain; sharp generated textures can differ from HR.
+
+## Run
 
 ```bash
-cd /Users/kirill/edu/mgm_i2i
-.venv/bin/python scripts/check_offline.py
-.venv/bin/python -m pytest -q tests
-.venv/bin/python scripts/train.py --config configs/toy_mse.json
-.venv/bin/python scripts/train.py --config configs/toy_mgm.json
-.venv/bin/python scripts/compare.py runs/toy_mse runs/toy_mgm
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m pytest -q tests
+python scripts/train.py --config configs/toy_mgm.json
 ```
 
-Для нового запуска укажи другое `--output`; существующие результаты не перезаписываются. `Ctrl+C` сохраняет checkpoint.
+The toy example runs independently of DIV2K. For the reported CUDA/Slurm experiment, see [reproduction instructions](docs/REPRODUCING.md). Datasets and model checkpoints are not bundled. [`src/mgm_i2i/cluster`](src/mgm_i2i/cluster) contains the SR implementation; [`scripts`](scripts) and [`slurm`](slurm) contain planning, training and evaluation entry points.
 
-## Окружение и данные без сети
-
-Окружение уже установлено. Если понадобится восстановить его:
-
-```bash
-sh scripts/setup_offline.sh
-```
-
-Все установочные файлы, изображения CIFAR-10, LPIPS/AlexNet-веса и JS для формул находятся локально. Скрипты обучения не скачивают данные. `scripts/download_materials.py` нужен только для повторной подготовки при наличии сети.
-
-## Изображения
-
-```bash
-.venv/bin/python scripts/train.py --config configs/cifar_mse.json
-.venv/bin/python scripts/train.py --config configs/cifar_mgm.json
-.venv/bin/python scripts/train.py --config configs/cifar_gan.json
-.venv/bin/python scripts/compare.py runs/cifar_mse runs/cifar_mgm runs/cifar_gan
-```
-
-Это конфигурации стартового исследования, а не подобранные лучшие гиперпараметры. На CPU сначала проверь 20–50 шагов, измерь скорость и реши, сколько обучать. Команды smoke-test и продолжения есть в руководстве.
-
-## Где что находится
-
-- `materials/` — основная статья и десять дополнительных PDF; карта чтения в руководстве.
-- `third_party/` — распакованные публичные исходники EDM, SiD, pix2pix, Zero-Flow и categorical MGM. Это справочный код; наш прототип его не импортирует.
-- `src/mgm_i2i/` — наша адаптация: модели, данные, MGM-loss и метрики.
-- `scripts/` — обучение, оценка, сравнение, проверка офлайн-работы.
-- `configs/` — настройки синтетических и CIFAR-экспериментов.
-- `data/cifar10/` — 50 000 исходных train-изображений и 10 000 test-изображений. Train разбивается на 45 000 train / 5 000 val.
-- `runs/verified_*` — проверочные запуски, полученные при подготовке; не итоговый результат задания.
-- `offline/verification.json` — результат проверки с заблокированными сетевыми соединениями.
-- `offline/inventory.json` — происхождение и SHA-256 скачанных файлов.
-- `offline/AI_AND_COMPUTE.md` — шаблон раскрытия использования AI и вычислений по ТЗ.
-
-Главная гипотеза: условный MGM сравнивает распределения HR-выходов для одного LR-входа. На синтетике проверяем две моды и неопределённость; на CIFAR — точность, perceptual-качество, согласованность и стоимость. Совпадение marginal-распределений само по себе не доказывает правильную I2I-связь.
-
-## Дополнительные авторские SR-бейзлайны
-
-Инференс SinSR и одношагового VOSR на общих pooling-парах, подготовка весов и
-независимые Slurm-цепочки: [SR_REFERENCES.md](SR_REFERENCES.md).
+Based on [Midpoint Generative Models](https://arxiv.org/abs/2605.29920). Compute: HSE University supercomputer. AI assistance: Codex Astra/Sol for analysis, implementation and editing. Earlier development notes are preserved in [the Russian README archive](README.ru.md).
